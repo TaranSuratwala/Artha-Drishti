@@ -1,0 +1,395 @@
+{
+  "20MICRONS": [
+    {
+      "timestamp": "2026-02-24T13:47:52.443301",
+      "predicted_price": 179.25,
+      "current_price": 178.76,
+      "signal": "HOLD",
+      "confidence": 5.5,
+      "buy_price": 179.97,
+      "target_price": 176.38,
+      "stoploss": 175.52,
+      "rr_ratio": 0.81,
+      "actual_price": null,
+      "accurate": null
+    }
+  ],
+  "AAVAS": [
+    {
+      "timestamp": "2026-02-24T13:49:09.752307",
+      "predicted_price": 1275.63,
+      "current_price": 1280.0,
+      "signal": "HOLD",
+      "confidence": 6.8,
+      "buy_price": 1273.31,
+      "target_price": 1445.45,
+      "stoploss": 1203.43,
+      "rr_ratio": 2.46,
+      "actual_price": null,
+      "accurate": null
+    }
+  ],
+  "AARVI": [
+    {
+      "timestamp": "2026-02-24T15:03:29.337062",
+      "predicted_price": 126.69,
+      "current_price": 126.99,
+      "signal": "HOLD",
+      "confidence": 0.7,
+      "buy_price": 126.99,
+      "target_price": 141.75,
+      "stoploss": 115.18,
+      "rr_ratio": 1.25,
+      "actual_price": null,
+      "accurate": null
+    }
+  ],
+  "RELIANCE": [
+    {
+      "timestamp": "2026-02-24T17:09:35.355506",
+      "predicted_price": 1418.07,
+      "current_price": 1419.4,
+      "signal": "HOLD",
+      "confidence": 0.9,
+      "buy_price": 1422.07,
+      "target_price": 1389.67,
+      "stoploss": 1407.58,
+      "rr_ratio": 2.24,
+      "actual_price": null,
+      "accurate": null
+    },
+    {
+      "timestamp": "2026-02-24T17:10:58.786552",
+      "predicted_price": 1413.7,
+      "current_price": 1419.4,
+      "signal": "HOLD",
+      "confidence": 0.8,
+      "buy_price": 1422.07,
+      "target_price": 1389.67,
+      "stoploss": 1407.58,
+      "rr_ratio": 2.24,
+      "actual_price": null,
+      "accurate": null
+    }
+  ],
+  "AAREYDRUGS": [
+    {
+      "timestamp": "2026-02-24T17:44:20.025328",
+      "predicted_price": 78.14,
+      "current_price": 78.52,
+      "signal": "HOLD",
+      "confidence": 1.1,
+      "buy_price": 78.13,
+      "target_price": 89.36,
+      "stoploss": 69.85,
+      "rr_ratio": 1.36,
+      "actual_price": null,
+      "accurate": null
+    },
+    {
+      "timestamp": "2026-02-26T11:40:25.491018",
+      "predicted_price": 78.01,
+      "current_price": 78.52,
+      "signal": "HOLD",
+      "confidence": 0.7,
+      "buy_price": 78.13,
+      "target_price": 89.36,
+      "stoploss": 69.85,
+      "rr_ratio": 1.36,
+      "actual_price": null,
+      "accurate": null
+    },
+    {
+      "timestamp": "2026-02-26T11:43:36.387026",
+      "predicted_price": 77.99,
+      "current_price": 78.52,
+      "signal": "HOLD",
+      "confidence": 0.9,
+      "buy_price": 78.13,
+      "target_price": 89.36,
+      "stoploss": 69.85,
+      "rr_ratio": 1.36,
+      "actual_price": null,
+      "accurate": null
+    }
+  ],
+  "ABB": [
+    {
+      "timestamp": "2026-02-24T17:53:35.030694",
+      "predicted_price": 5968.65,
+      "current_price": 5987.0,
+      "signal": "HOLD",
+      "confidence": 1.0,
+      "buy_price": 5970.5,
+      "target_price": 6481.31,
+      "stoploss": 5591.55,
+      "rr_ratio": 1.35,
+      "actual_price": null,
+      "accurate": null
+    },
+    {
+      "timestamp": "2026-02-27T14:04:17.093449",
+      "predicted_price": 5958.34,
+      "current_price": 5987.0,
+      "signal": "HOLD",
+      "confidence": 0.8,
+      "buy_price": 5970.5,
+      "target_price": 6481.31,
+      "stoploss": 5591.55,
+      "rr_ratio": 1.35,
+      "actual_price": null,
+      "accurate": null
+    }
+  ],
+  "AARON": [
+    {
+      "timestamp": "2026-02-24T17:55:41.477920",
+      "predicted_price": 164.89,
+      "current_price": 165.47,
+      "signal": "HOLD",
+      "confidence": 0.9,
+      "buy_price": 165.99,
+      "target_price": 159.78,
+      "stoploss": 163.11,
+      "rr_ratio": 2.16,
+      "actual_price": null,
+      "accurate": null
+    }
+  ],
+  "5PAISA": [
+    {
+      "timestamp": "2026-02-25T11:13:14.941975",
+      "predicted_price": 325.1,
+      "current_price": 323.85,
+      "signal": "HOLD",
+      "confidence": 0.9,
+      "buy_price": 322.57,
+      "target_price": 367.19,
+      "stoploss": 298.92,
+      "rr_ratio": 1.89,
+      "actual_price": null,
+      "accurate": null
+    }
+  ],
+  "AARTIPHARM": [
+    {
+      "timestamp": "2026-02-25T11:16:56.778145",
+      "predicted_price": 697.98,
+      "current_price": 698.75,
+      "signal": "HOLD",
+      "confidence": 0.8,
+      "buy_price": 701.13,
+      "target_price": 697.33,
+      "stoploss": 687.42,
+      "rr_ratio": 0.28,
+      "actual_price": null,
+      "accurate": null
+    },
+    {
+      "timestamp": "2026-02-25T11:22:29.594526",
+      "predicted_price": 696.8,
+      "current_price": 698.75,
+      "signal": "HOLD",
+      "confidence": 0.9,
+      "buy_price": 701.13,
+      "target_price": 697.33,
+      "stoploss": 687.42,
+      "rr_ratio": 0.28,
+      "actual_price": null,
+      "accurate": null
+    }
+  ],
+  "NAVINFLUOR": [
+    {
+      "timestamp": "2026-02-25T12:26:57.391534",
+      "predicted_price": 6514.56,
+      "current_price": 6526.0,
+      "signal": "HOLD",
+      "confidence": 1.1,
+      "buy_price": 6502.54,
+      "target_price": 7159.65,
+      "stoploss": 6019.08,
+      "rr_ratio": 1.36,
+      "actual_price": null,
+      "accurate": null
+    },
+    {
+      "timestamp": "2026-02-25T12:29:22.248752",
+      "predicted_price": 6517.8,
+      "current_price": 6526.0,
+      "signal": "HOLD",
+      "confidence": 0.9,
+      "buy_price": 6502.54,
+      "target_price": 7159.65,
+      "stoploss": 6019.08,
+      "rr_ratio": 1.36,
+      "actual_price": null,
+      "accurate": null
+    }
+  ],
+  "ABSLAMC": [
+    {
+      "timestamp": "2026-02-25T12:51:10.353400",
+      "predicted_price": 918.16,
+      "current_price": 917.9,
+      "signal": "HOLD",
+      "confidence": 0.8,
+      "buy_price": 915.5,
+      "target_price": 986.38,
+      "stoploss": 863.11,
+      "rr_ratio": 1.35,
+      "actual_price": null,
+      "accurate": null
+    }
+  ],
+  "BSE": [
+    {
+      "timestamp": "2026-02-25T16:34:29.440728",
+      "predicted_price": 2742.71,
+      "current_price": 2739.5,
+      "signal": "HOLD",
+      "confidence": 1.0,
+      "buy_price": 2750.49,
+      "target_price": 2616.06,
+      "stoploss": 2691.64,
+      "rr_ratio": 2.28,
+      "actual_price": null,
+      "accurate": null
+    }
+  ],
+  "TREEHOUSE": [
+    {
+      "timestamp": "2026-02-26T10:59:40.981792",
+      "predicted_price": 8.69,
+      "current_price": 8.71,
+      "signal": "HOLD",
+      "confidence": 1.0,
+      "buy_price": 8.66,
+      "target_price": 11.14,
+      "stoploss": 7.55,
+      "rr_ratio": 2.25,
+      "actual_price": null,
+      "accurate": null
+    }
+  ],
+  "PARSVNATH": [
+    {
+      "timestamp": "2026-02-27T15:24:55.114697",
+      "predicted_price": 7.18,
+      "current_price": 7.19,
+      "signal": "HOLD",
+      "confidence": 0.6,
+      "buy_price": 7.23,
+      "target_price": 7.45,
+      "stoploss": 6.98,
+      "rr_ratio": 0.87,
+      "actual_price": null,
+      "accurate": null
+    }
+  ],
+  "VMART": [
+    {
+      "timestamp": "2026-04-09T14:13:11.977036",
+      "predicted_price": 605.43,
+      "current_price": 612.45,
+      "signal": "HOLD",
+      "confidence": 0.8,
+      "buy_price": 609.5,
+      "target_price": 722.86,
+      "stoploss": 549.4,
+      "rr_ratio": 1.89,
+      "actual_price": null,
+      "accurate": null
+    }
+  ],
+  "VEDL": [
+    {
+      "timestamp": "2026-04-09T14:14:15.815531",
+      "predicted_price": 684.26,
+      "current_price": 690.0,
+      "signal": "HOLD",
+      "confidence": 0.8,
+      "buy_price": 690.0,
+      "target_price": 751.23,
+      "stoploss": 641.02,
+      "rr_ratio": 1.25,
+      "actual_price": null,
+      "accurate": null
+    }
+  ],
+  "SENCO": [
+    {
+      "timestamp": "2026-04-09T14:15:39.315293",
+      "predicted_price": 320.21,
+      "current_price": 323.45,
+      "signal": "HOLD",
+      "confidence": 0.8,
+      "buy_price": 322.16,
+      "target_price": 359.04,
+      "stoploss": 303.88,
+      "rr_ratio": 2.02,
+      "actual_price": null,
+      "accurate": null
+    }
+  ],
+  "RAMASTEEL": [
+    {
+      "timestamp": "2026-04-09T14:16:59.233081",
+      "predicted_price": 4.42,
+      "current_price": 4.51,
+      "signal": "HOLD",
+      "confidence": 0.7,
+      "buy_price": 4.46,
+      "target_price": 6.55,
+      "stoploss": 3.52,
+      "rr_ratio": 2.21,
+      "actual_price": null,
+      "accurate": null
+    }
+  ],
+  "KREBSBIO": [
+    {
+      "timestamp": "2026-04-09T14:19:09.688400",
+      "predicted_price": 56.1,
+      "current_price": 57.15,
+      "signal": "HOLD",
+      "confidence": 1.1,
+      "buy_price": 56.77,
+      "target_price": 69.86,
+      "stoploss": 49.04,
+      "rr_ratio": 1.69,
+      "actual_price": null,
+      "accurate": null
+    }
+  ],
+  "WAAREEENER": [
+    {
+      "timestamp": "2026-04-09T14:21:08.401972",
+      "predicted_price": 3058.77,
+      "current_price": 3084.7,
+      "signal": "HOLD",
+      "confidence": 1.0,
+      "buy_price": 3097.49,
+      "target_price": 2921.58,
+      "stoploss": 2965.33,
+      "rr_ratio": 1.33,
+      "actual_price": null,
+      "accurate": null
+    }
+  ],
+  "ABDL": [
+    {
+      "timestamp": "2026-04-09T14:22:44.750700",
+      "predicted_price": 422.28,
+      "current_price": 427.5,
+      "signal": "HOLD",
+      "confidence": 0.8,
+      "buy_price": 425.65,
+      "target_price": 465.64,
+      "stoploss": 386.53,
+      "rr_ratio": 1.02,
+      "actual_price": null,
+      "accurate": null
+    }
+  ]
+}

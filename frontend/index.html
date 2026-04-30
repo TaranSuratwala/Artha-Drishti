@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="description" content="GenAI Stock Market Intelligence - AI-Powered Stock Analysis, Screening, Backtesting & Portfolio Management for NSE" />
+    <meta name="keywords" content="stock market, AI, predictions, screening, backtesting, NSE, trading, portfolio" />
+    <meta name="author" content="GenAI Stock Intelligence" />
+    <meta name="theme-color" content="#0f172a" />
+    <meta name="color-scheme" content="dark light" />
+    
+    <!-- Open Graph for social sharing -->
+    <meta property="og:title" content="GenAI Stock Intelligence" />
+    <meta property="og:description" content="AI-Powered Stock Analysis & Portfolio Management" />
+    <meta property="og:type" content="website" />
+    
+    <!-- PWA support meta -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    
+    <title>GenAI Stock Market Intelligence</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Inline critical CSS to prevent FOUC -->
+    <style>
+      body {
+        margin: 0;
+        background: radial-gradient(1200px 550px at -5% -10%, #0ea5e933 0%, transparent 65%), linear-gradient(135deg, #071426 0%, #0a233f 55%, #08334b 100%);
+        color: #f8fafc;
+        font-family: 'Manrope', sans-serif;
+      }
+      #root { min-height: 100vh; }
+      .initial-loader { display: flex; align-items: center; justify-content: center; height: 100vh; }
+      .initial-loader svg { animation: spin 1s linear infinite; }
+      @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+  </head>
+  <body>
+    <!-- Nielsen #7: Skip-to-content for keyboard users -->
+    <a href="#main-content" class="skip-link" style="position:absolute;top:-100%;left:16px;z-index:9999;padding:12px 24px;background:#3b82f6;color:#fff;border-radius:8px;font-weight:700;text-decoration:none">
+      Skip to main content
+    </a>
+    
+    <div id="root">
+      <!-- Initial loading state (shows before React hydrates) -->
+      <div class="initial-loader" aria-label="Loading application">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2" stroke-linecap="round">
+          <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
+        </svg>
+      </div>
+    </div>
+    
+    <!-- Nielsen #10: Noscript fallback -->
+    <noscript>
+      <div style="padding:2rem;text-align:center;color:#fff;background:#0f172a;min-height:100vh;">
+        <h1>GenAI Stock Intelligence</h1>
+        <p>JavaScript is required to run this application. Please enable JavaScript in your browser settings.</p>
+      </div>
+    </noscript>
+    
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>

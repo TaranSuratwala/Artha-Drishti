@@ -1,0 +1,34 @@
+{
+    "transactions": [
+        {
+            "id": "1770541052287",
+            "ticker": "WAAREEENER",
+            "type": "BUY",
+            "quantity": 19.0,
+            "price": 1959.31,
+            "date": "2026-02-08T14:27:32.287404"
+        },
+        {
+            "id": "1770541107583",
+            "ticker": "TATAPOWER",
+            "type": "BUY",
+            "quantity": 120.0,
+            "price": 407.41,
+            "date": "2026-02-08T14:28:27.583841"
+        }
+    ],
+    "holdings": {
+        "WAAREEENER": {
+            "ticker": "WAAREEENER",
+            "quantity": 19.0,
+            "avg_price": 1959.31,
+            "total_cost": 37226.89
+        },
+        "TATAPOWER": {
+            "ticker": "TATAPOWER",
+            "quantity": 120.0,
+            "avg_price": 407.41,
+            "total_cost": 48889.2
+        }
+    }
+}

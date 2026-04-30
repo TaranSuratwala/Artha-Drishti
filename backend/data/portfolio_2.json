@@ -1,0 +1,20 @@
+{
+    "transactions": [
+        {
+            "id": "1776421017391",
+            "ticker": "TATAPOWER",
+            "type": "BUY",
+            "quantity": 120.0,
+            "price": 404.0,
+            "date": "2026-04-08"
+        }
+    ],
+    "holdings": {
+        "TATAPOWER": {
+            "ticker": "TATAPOWER",
+            "quantity": 120.0,
+            "avg_price": 404.0,
+            "total_cost": 48480.0
+        }
+    }
+}
