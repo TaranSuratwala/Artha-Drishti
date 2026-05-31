@@ -1036,9 +1036,14 @@ class NSEDataPipeline:
 
     def init_database(self):
         """Initialize database schema"""
-        with self.engine.begin() as conn:
-            conn.execute(text("CREATE EXTENSION IF NOT EXISTS timescaledb CASCADE;"))
+        # Attempt to create extension outside of a transaction block
+        try:
+            with self.engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
+                conn.execute(text("CREATE EXTENSION IF NOT EXISTS timescaledb CASCADE;"))
+        except Exception as e:
+            logger.warning(f"TimescaleDB extension not supported: {e}")
             
+        with self.engine.begin() as conn:
             # Main table
             conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS nse_stocks (
@@ -1059,16 +1064,19 @@ class NSEDataPipeline:
                     PRIMARY KEY (ticker, date)
                 );
             """))
-            
-            # Hypertable
-            try:
+
+        # Attempt to create hypertable in a separate transaction so failures do not crash other table creation
+        try:
+            with self.engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
                 conn.execute(text("""
                     SELECT create_hypertable('nse_stocks', 'date', 
                         if_not_exists => TRUE,
                         chunk_time_interval => INTERVAL '1 month');
                 """))
-            except Exception:
-                pass 
+        except Exception:
+            pass 
+
+        with self.engine.begin() as conn:
 
             # Stock Metadata
             conn.execute(text("""
@@ -1193,6 +1201,76 @@ class NSEDataPipeline:
         with self.engine.connect() as conn:
             result = conn.execute(query, {"ticker": ticker})
             return [dict(row._mapping) for row in result]
+
+    def get_bulk_latest_features(self, tickers: Optional[List[str]] = None) -> Dict[str, Dict]:
+        """Fetch latest engineered features row for multiple (or all) tickers in one query."""
+        if tickers:
+            query = text("""
+                SELECT DISTINCT ON (ticker) *
+                FROM engineered_features
+                WHERE ticker = ANY(:tickers)
+                ORDER BY ticker, date DESC
+            """)
+            params = {"tickers": tickers}
+        else:
+            query = text("""
+                SELECT DISTINCT ON (ticker) *
+                FROM engineered_features
+                ORDER BY ticker, date DESC
+            """)
+            params = {}
+            
+        with self.engine.connect() as conn:
+            result = conn.execute(query, params)
+            return {row.ticker: dict(row._mapping) for row in result}
+
+    def get_bulk_ticker_history(self, tickers: Optional[List[str]] = None, limit_per_ticker: int = 250) -> Dict[str, List[Dict]]:
+        """Fetch recent history for multiple tickers in one query using a window function."""
+        if tickers:
+            query = text(f"""
+                WITH RankedData AS (
+                    SELECT *,
+                           ROW_NUMBER() OVER(PARTITION BY ticker ORDER BY date DESC) as rn
+                    FROM nse_stocks
+                    WHERE ticker = ANY(:tickers)
+                )
+                SELECT * FROM RankedData WHERE rn <= :limit ORDER BY ticker, date ASC
+            """)
+            params = {"tickers": tickers, "limit": limit_per_ticker}
+        else:
+            query = text(f"""
+                WITH RankedData AS (
+                    SELECT *,
+                           ROW_NUMBER() OVER(PARTITION BY ticker ORDER BY date DESC) as rn
+                    FROM nse_stocks
+                )
+                SELECT * FROM RankedData WHERE rn <= :limit ORDER BY ticker, date ASC
+            """)
+            params = {"limit": limit_per_ticker}
+            
+        with self.engine.connect() as conn:
+            result = conn.execute(query, params)
+            
+            history_map = {}
+            for row in result:
+                ticker = row.ticker
+                if ticker not in history_map:
+                    history_map[ticker] = []
+                # Ensure ascending order per ticker since we ordered by ticker, date ASC
+                # Need to remove the 'rn' column from the dict if possible, or just leave it
+                d = dict(row._mapping)
+                d.pop('rn', None)
+                history_map[ticker].append(d)
+                
+            return history_map
+
+    def get_feature_freshness(self) -> Dict[str, datetime]:
+        """Get the latest feature calculation date for all tickers to check staleness."""
+        query = text("SELECT ticker, MAX(date) as latest_date FROM engineered_features GROUP BY ticker")
+        with self.engine.connect() as conn:
+            result = conn.execute(query)
+            return {row.ticker: row.latest_date for row in result}
+
 
     def _detect_trading_gaps(self, df: pd.DataFrame) -> Dict[str, List]:
         """Detect gaps in trading data for each ticker"""

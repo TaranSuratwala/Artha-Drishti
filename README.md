@@ -1,13 +1,29 @@
-# Artha-Drishti
+# Artha Drishti
 
-GenAI Stock Market Intelligence System. A full-stack platform for stock screening, prediction, and backtesting with an interactive React dashboard and a Flask API backend.
+Artha Drishti is a stock market intelligence platform that brings screening, prediction, and backtesting into a single workflow. It pairs a modern React dashboard with a Flask API to deliver data, models, and strategy evaluation in one place.
 
 ![Python](https://img.shields.io/badge/python-3.9%2B-blue)
 ![React](https://img.shields.io/badge/react-18-61dafb)
 ![Vite](https://img.shields.io/badge/vite-4.x-646cff)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-## Demo (Local)
+## Product Highlights
+
+- Multi-strategy screener covering momentum, value, breakout, swing, and custom logic
+- LSTM + attention price prediction endpoints for batch and per-ticker requests
+- Backtesting engine with performance metrics and historical comparisons
+- Portfolio watchlist and dashboard views for faster review cycles
+- Scheduler-driven data pipeline with PostgreSQL and TimescaleDB
+
+## System Overview
+
+- Frontend: React 18 + Vite single-page application
+- Backend: Flask API (Python 3.9+)
+- Database: PostgreSQL 14+ with TimescaleDB extension
+- ML: PyTorch models with pretrained artifacts
+- Optional: Redis for caching
+
+## Run Locally
 
 1. Start the backend API:
    ```bash
@@ -27,43 +43,6 @@ GenAI Stock Market Intelligence System. A full-stack platform for stock screenin
 3. Open the app at http://localhost:5173
 
 Optional check: `GET http://localhost:5000/api/health`
-
-## Highlights
-
-- Multi-strategy screener (Momentum, Piotroski, Swing, Breakout, Value, Custom)
-- LSTM + Attention price predictions with batch and per-ticker endpoints
-- Backtesting engine with historical performance metrics
-- Portfolio watchlist and dashboard views
-- Scheduler-driven data pipeline (PostgreSQL + TimescaleDB)
-
-## Architecture
-
-- Frontend: React 18 + Vite SPA
-- Backend: Flask API (Python 3.9+)
-- Database: PostgreSQL 14+ with TimescaleDB extension
-- ML: PyTorch-based models (pretrained artifacts included)
-- Optional: Redis for caching
-
-## Quick Start
-
-### Backend
-
-```bash
-cd backend
-python -m venv venv
-venv\Scripts\activate
-pip install -r requirements.txt
-copy .env.example .env
-python application.py
-```
-
-### Frontend
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
 
 ## Configuration
 

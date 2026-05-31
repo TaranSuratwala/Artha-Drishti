@@ -500,7 +500,7 @@ class AdvancedStrategyEngine:
 
     def evaluate_multiple_strategies(self, df: pd.DataFrame,
                                       strategy_names: Optional[List[str]] = None) -> List[Dict]:
-        """Evaluate multiple strategies on the same stock data."""
+        """Evaluate multiple strategies on the same stock data using parallel execution."""
         if strategy_names is None:
             strategy_names = list(self.strategies.keys())
 
@@ -508,11 +508,9 @@ class AdvancedStrategyEngine:
         if df_with_indicators is None or len(df_with_indicators) < 50:
             return []
 
-        results = []
-        for name in strategy_names:
+        def eval_strategy(name):
             if name not in self.strategies:
-                continue
-
+                return None
             strategy = self.strategies[name]
             total_score = 0
             total_weight = 0
@@ -529,7 +527,7 @@ class AdvancedStrategyEngine:
 
             confidence = (total_score / total_weight * 100) if total_weight > 0 else 0
 
-            results.append({
+            return {
                 "strategy": name,
                 "category": strategy.get("category", "Other"),
                 "description": strategy.get("description", ""),
@@ -542,7 +540,16 @@ class AdvancedStrategyEngine:
                 "max_score": round(total_weight, 2),
                 "risk_level": strategy.get("risk_level", "Unknown"),
                 "timeframe": strategy.get("timeframe", "Unknown"),
-            })
+            }
+
+        results = []
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=min(10, max(1, len(strategy_names)))) as executor:
+            futures = [executor.submit(eval_strategy, name) for name in strategy_names]
+            for future in futures:
+                res = future.result()
+                if res:
+                    results.append(res)
 
         return sorted(results, key=lambda x: x["confidence"], reverse=True)
 

@@ -1,6 +1,7 @@
-from flask import Flask, jsonify, request, send_file, g
+from flask import Flask, jsonify, request, send_file, g, Response
 from flask_cors import CORS
-from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
+from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity, verify_jwt_in_request
+from flask_jwt_extended.exceptions import JWTExtendedException
 from werkzeug.exceptions import HTTPException, BadRequest
 from UserManager import UserManager
 import decimal
@@ -1332,7 +1333,18 @@ def _run_screen(strategy_name, params=None):
     logger.info(f"Running {strategy_name} screen (params={params})")
     try:
         # run_screening returns {status, results, count, ...}
-        raw = screener._interactive.run_screening(strategy_name, max_results=200)
+        overrides = dict(params)
+        max_results = overrides.pop('max_results', 200)
+        try:
+            max_results = max(1, int(max_results))
+        except (TypeError, ValueError):
+            max_results = 200
+
+        raw = screener._interactive.run_screening(
+            strategy_name,
+            max_results=max_results,
+            overrides=overrides,
+        )
         if raw.get('status') != 'success':
             return jsonify({"error": raw.get('message', 'Screening failed'), "strategy": strategy_name, "results": [], "count": 0}), 500
 
@@ -1354,6 +1366,26 @@ def _run_screen(strategy_name, params=None):
 @app.route('/api/screen/piotroski', methods=['POST'])
 def screen_piotroski():
     return _run_screen('piotroski', request.get_json(silent=True))
+
+@app.route('/api/screen/macd_triple_alignment', methods=['GET', 'POST'])
+def run_macd_triple_alignment():
+    """Execute the 3 MACD Alignment strategy via the optimized engine"""
+    try:
+        logger.info("Running Triple MACD screening...")
+        
+        # Bypass the old wrapper and use the optimized interactive engine directly
+        result = screener._interactive.run_screening('macd_triple_alignment', max_results=50)
+        
+        if result.get('status') == 'success':
+            return jsonify(result)
+        else:
+            return jsonify({'error': result.get('message', 'Screening failed')}), 500
+            
+    except Exception as e:
+        logger.error(f"Error in Triple MACD screen: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/screen/momentum', methods=['POST'])
 def screen_momentum():
@@ -1533,9 +1565,9 @@ def get_recommendations():
     timeframe = str(timeframe or 'weekly').strip().lower()
 
     strategy_map = {
-        'daily': ['momentum', 'breakout', 'contrarian'],
+        'daily': ['momentum', 'swing_trading', 'contrarian'],
         'weekly': ['momentum', 'trend_following', 'breakout'],
-        'monthly': ['trend_following', 'value', 'quality_growth'],
+        'monthly': ['trend_following', 'mean_reversion', 'breakout'],
     }
     if timeframe not in strategy_map:
         timeframe = 'weekly'
@@ -2632,6 +2664,13 @@ def _build_health_snapshot() -> dict:
         "portfolio": "active" if 'portfolio_manager' in globals() else "missing",
     }
 
+    model_health = {}
+    try:
+        if 'predictor' in globals():
+            model_health = predictor.get_model_health_summary()
+    except Exception as exc:
+        model_health = {"status": "ERROR", "reason": str(exc)}
+
     overall_status = "healthy" if db_status == "connected" else "degraded"
     return {
         "status": overall_status,
@@ -2640,6 +2679,7 @@ def _build_health_snapshot() -> dict:
         "database": db_status,
         "database_error": db_error,
         "components": components,
+        "model_health": model_health,
         "uptime_seconds": round(time.time() - APP_STARTED_AT, 2),
         "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
         "request_id": getattr(g, 'request_id', None),
@@ -2676,6 +2716,23 @@ def health_ready():
         "request_id": snapshot.get("request_id"),
     }
     return jsonify(payload), (200 if ready else 503)
+
+
+@app.route('/api/health/model', methods=['GET'])
+def health_model():
+    """Production model health summary for dashboard widgets and alerts."""
+    try:
+        payload = predictor.get_model_health_summary()
+        code = 503 if payload.get("status") == "CRITICAL" else 200
+        return jsonify(payload), code
+    except Exception as exc:
+        logger.error(f"Model health endpoint error: {exc}")
+        return jsonify({
+            "status": "ERROR",
+            "reason": str(exc),
+            "request_id": getattr(g, 'request_id', None),
+            "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
+        }), 500
 
 @app.route('/api/stats', methods=['GET'])
 def get_stats():
@@ -3658,6 +3715,9 @@ def run_custom_strategy_screening(strategy_name):
 
         # Load custom strategies
         import json
+        import os
+        from StockScreener import StrategyCondition, TradingStrategy
+        
         base_dir = os.path.dirname(os.path.abspath(__file__))
         strategies_file = os.path.join(base_dir, 'data', 'custom_strategies.json')
         custom_strategies = []
@@ -3711,153 +3771,27 @@ def run_custom_strategy_screening(strategy_name):
             metadata=strategy_config.get('metadata', {})
         )
 
-        # Access the InteractiveStockScreener and screen in parallel
+        # OPTIMIZATION: Delegate execution directly to the bulk-optimized engine!
         interactive = screener._interactive
-        tickers = interactive._get_tickers()
+        result = interactive.run_strategy_object(
+            strategy_obj,
+            max_results=data.get('max_results', 50),
+            min_score_pct=data.get('min_score_pct', 40.0)
+        )
 
-        if not tickers:
+        if result.get('status') == 'success':
+            elapsed = _time.time() - start_time
             return jsonify({
                 'status': 'success',
                 'strategy': strategy_name,
-                'count': 0,
-                'results': [],
-                'message': 'No tickers available'
+                'strategy_type': strategy_type,
+                'description': strategy_config.get('description', ''),
+                'count': result.get('count', 0),
+                'execution_time': round(elapsed, 2),
+                'results': result.get('results', [])
             })
-
-        from concurrent.futures import ThreadPoolExecutor, as_completed
-
-        results = []
-        max_tickers = min(len(tickers), 2500)
-
-        def _screen_custom(ticker):
-            """Screen a single ticker with indicator-alias resolution."""
-            try:
-                df = interactive._fetch_stock_data(ticker)
-                if df is None:
-                    return None
-
-                from StockScreener import TechnicalIndicatorEngine
-                tech_engine = TechnicalIndicatorEngine(df)
-                df_ind = tech_engine.calculate_all_indicators()
-
-                if df_ind.empty or len(df_ind) < 2:
-                    return None
-
-                latest = df_ind.iloc[-1]
-                prev = df_ind.iloc[-2]
-                indicators = latest.to_dict()
-
-                # Build prev indicators for increasing/decreasing support
-                prev_dict = prev.to_dict()
-                for key, val in prev_dict.items():
-                    indicators[f'{key}_prev'] = val
-
-                # Also add aliased prev values
-                for alias, real in _INDICATOR_ALIASES.items():
-                    if real in prev_dict:
-                        indicators[f'{alias}_prev'] = prev_dict[real]
-
-                # Resolve indicator aliases in conditions for this stock
-                total_score = 0.0
-                max_score = 0.0
-                conditions_passed = 0
-
-                for cond in strategy_obj.conditions:
-                    max_score += cond.weight
-                    resolved_ind = _resolve_indicator_name(cond.indicator, indicators)
-                    ind_val = indicators.get(resolved_ind)
-
-                    if ind_val is None:
-                        continue
-
-                    # Resolve comparison value (could be another indicator name)
-                    cmp_value = cond.value
-                    if isinstance(cmp_value, str):
-                        resolved_cmp = _resolve_indicator_name(cmp_value, indicators)
-                        if resolved_cmp in indicators:
-                            cmp_value = indicators[resolved_cmp]
-                        else:
-                            try:
-                                cmp_value = float(cmp_value)
-                            except (ValueError, TypeError):
-                                continue
-                    else:
-                        try:
-                            cmp_value = float(cmp_value)
-                        except (ValueError, TypeError):
-                            continue
-
-                    try:
-                        ind_val = float(ind_val)
-                        cmp_value = float(cmp_value)
-                    except (ValueError, TypeError):
-                        continue
-
-                    passed = False
-                    if cond.operator == '>':
-                        passed = ind_val > cmp_value
-                    elif cond.operator == '<':
-                        passed = ind_val < cmp_value
-                    elif cond.operator == '>=':
-                        passed = ind_val >= cmp_value
-                    elif cond.operator == '<=':
-                        passed = ind_val <= cmp_value
-                    elif cond.operator == '==':
-                        passed = abs(ind_val - cmp_value) < 1e-6
-
-                    if passed:
-                        total_score += cond.weight
-                        conditions_passed += 1
-
-                # Require at least half the conditions to pass
-                min_required = max(1, len(strategy_obj.conditions) // 2)
-                if conditions_passed < min_required:
-                    return None
-
-                final_score = (total_score / max_score * 100) if max_score > 0 else 0
-
-                return {
-                    'ticker': ticker,
-                    'score': round(final_score, 2),
-                    'current_price': round(float(latest.get('close', 0)), 2),
-                    'conditions_passed': conditions_passed,
-                    'total_conditions': len(strategy_obj.conditions),
-                    'confidence': round((conditions_passed / max(len(strategy_obj.conditions), 1)) * 100, 1),
-                    'key_indicators': {
-                        'rsi_14': round(float(indicators.get('rsi_14', indicators.get('RSI_14', 0))), 2),
-                        'price_change_20d': round(float(indicators.get('price_change_20d', 0)), 2),
-                        'volume_ratio_20': round(float(indicators.get('volume_ratio_20', 0)), 2),
-                    }
-                }
-            except Exception as e:
-                logger.debug(f"Error screening {ticker} with custom strategy: {e}")
-                return None
-
-        with ThreadPoolExecutor(max_workers=interactive.max_workers) as executor:
-            future_to_ticker = {
-                executor.submit(_screen_custom, t): t
-                for t in tickers[:max_tickers]
-            }
-            for future in as_completed(future_to_ticker):
-                try:
-                    result = future.result(timeout=30)
-                    if result and result['score'] > 0:
-                        results.append(result)
-                except Exception:
-                    pass
-
-        results = sorted(results, key=lambda x: x['score'], reverse=True)[:50]
-        elapsed = _time.time() - start_time
-
-        return jsonify({
-            'status': 'success',
-            'strategy': strategy_name,
-            'strategy_type': strategy_type,
-            'description': strategy_config.get('description', ''),
-            'count': len(results),
-            'execution_time': round(elapsed, 2),
-            'results': results
-        })
+        else:
+            return jsonify({'error': result.get('message', 'Screening failed')}), 500
 
     except Exception as e:
         logger.error(f"Custom strategy screening error for {strategy_name}: {e}")
@@ -4096,6 +4030,12 @@ def screen_multi_strategy():
             except (TypeError, ValueError):
                 return default
 
+        def _safe_float(value, default):
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return default
+
         min_overlap = _safe_int(data.get('min_overlap', 2), 2)
         min_overlap = max(2, min(min_overlap, len(strategies)))
 
@@ -4105,9 +4045,16 @@ def screen_multi_strategy():
         max_results = _safe_int(data.get('max_results', 150), 150)
         max_results = max(20, min(max_results, 400))
 
+        time_budget_seconds = _safe_float(data.get('time_budget_seconds', None), None)
+        if time_budget_seconds is not None:
+            if time_budget_seconds <= 0:
+                time_budget_seconds = None
+            else:
+                time_budget_seconds = max(30.0, min(time_budget_seconds, 600.0))
+
         cache_key = (
             f"screen:multi:{','.join(sorted(strategies))}:"
-            f"{min_overlap}:{max_tickers}:{max_results}"
+            f"{min_overlap}:{max_tickers}:{max_results}:{int(time_budget_seconds or 0)}"
         )
         cached_payload = _get_cached(cache_key)
         if cached_payload is not None:
@@ -4128,6 +4075,7 @@ def screen_multi_strategy():
             strategies,
             max_results=max_results,
             max_tickers=max_tickers,
+            time_budget_seconds=time_budget_seconds,
         )
 
         if multi_results.get('status') == 'error':
@@ -4151,7 +4099,7 @@ def screen_multi_strategy():
                         continue
 
                     if ticker not in all_results:
-                        all_results[ticker] = {'ticker': ticker, 'strategies': []}
+                        all_results[ticker] = {'ticker': ticker, 'strategies': [], 'prediction_available': True}
 
                     all_results[ticker]['strategies'].append(strategy)
 
@@ -4177,7 +4125,10 @@ def screen_multi_strategy():
             "max_results": max_results,
             "strategy_counts": strategy_results,
             "processed_tickers": multi_results.get('processed_tickers'),
+            "submitted_tickers": multi_results.get('submitted_tickers'),
+            "requested_tickers": multi_results.get('requested_tickers'),
             "execution_time": multi_results.get('execution_time'),
+            "timed_out": multi_results.get('timed_out', False),
             "count": len(overlapping),
             "results": overlapping,
             "cached": False,
@@ -4188,6 +4139,126 @@ def screen_multi_strategy():
         
     except Exception as e:
         logger.error(f"Multi-strategy screening error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/screen/multi/stream', methods=['POST'])
+def screen_multi_strategy_stream():
+    """
+    Stream progress events via SSE, then final results for multi-strategy screening
+    """
+    import queue
+    import threading
+    import json
+    
+    try:
+        data = request.get_json() or {}
+
+        raw_strategies = data.get('strategies', ['momentum', 'value'])
+        strategies = [str(s).strip().lower() for s in raw_strategies if str(s).strip()]
+        strategies = list(dict.fromkeys(strategies))
+
+        if len(strategies) < 2:
+            return jsonify({"error": "At least 2 strategies are required"}), 400
+
+        def _safe_int(value, default):
+            try: return int(value)
+            except (TypeError, ValueError): return default
+
+        def _safe_float(value, default):
+            try: return float(value)
+            except (TypeError, ValueError): return default
+
+        min_overlap = _safe_int(data.get('min_overlap', 2), 2)
+        min_overlap = max(2, min(min_overlap, len(strategies)))
+
+        max_tickers = _safe_int(data.get('max_tickers', 800), 800)
+        max_tickers = max(100, min(max_tickers, 3000)) # bumped max for all stocks
+
+        max_results = _safe_int(data.get('max_results', 150), 150)
+        max_results = max(20, min(max_results, 400))
+
+        time_budget_seconds = _safe_float(data.get('time_budget_seconds', None), None)
+        if time_budget_seconds is not None:
+            if time_budget_seconds <= 0:
+                time_budget_seconds = None
+            else:
+                time_budget_seconds = max(30.0, min(time_budget_seconds, 600.0))
+
+        def generate():
+            q = queue.Queue()
+            
+            def progress_callback(event_data):
+                q.put(('progress', event_data))
+                
+            def run_screener():
+                try:
+                    multi_results = screener.run_multiple_strategies(
+                        strategies,
+                        max_results=max_results,
+                        max_tickers=max_tickers,
+                        time_budget_seconds=time_budget_seconds,
+                        progress_callback=progress_callback
+                    )
+
+                    if multi_results.get('status') == 'error':
+                        q.put(('error', multi_results.get('message', 'Scan failed')))
+                        return
+
+                    raw_results = multi_results.get('results', {}) or {}
+                    all_results = {}
+                    strategy_results = {strategy: 0 for strategy in strategies}
+
+                    for strategy, results_list in raw_results.items():
+                        normalized_results = results_list or []
+                        strategy_results[strategy] = len(normalized_results)
+                        for item in normalized_results:
+                            ticker = item.get('ticker')
+                            if ticker:
+                                if ticker not in all_results:
+                                    all_results[ticker] = {'ticker': ticker, 'strategies': []}
+                                all_results[ticker]['strategies'].append(strategy)
+
+                    overlapping = [
+                        {**row, 'overlap_count': len(row['strategies'])}
+                        for row in all_results.values()
+                        if len(row['strategies']) >= min_overlap
+                    ]
+                    overlapping.sort(key=lambda row: row['overlap_count'], reverse=True)
+
+                    response_payload = {
+                        "status": "success",
+                        "strategies_used": strategies,
+                        "min_overlap": min_overlap,
+                        "max_tickers": max_tickers,
+                        "max_results": max_results,
+                        "strategy_counts": strategy_results,
+                        "processed_tickers": multi_results.get('processed_tickers'),
+                        "submitted_tickers": multi_results.get('submitted_tickers'),
+                        "requested_tickers": multi_results.get('requested_tickers'),
+                        "execution_time": multi_results.get('execution_time'),
+                        "timed_out": multi_results.get('timed_out', False),
+                        "count": len(overlapping),
+                        "results": overlapping,
+                        "cached": False,
+                    }
+                    q.put(('result', response_payload))
+                except Exception as e:
+                    logger.error(f"SSE screening thread error: {e}")
+                    q.put(('error', str(e)))
+
+            # Start background thread
+            threading.Thread(target=run_screener, daemon=True).start()
+            
+            while True:
+                event_type, event_data = q.get()
+                yield f"event: {event_type}\ndata: {json.dumps(event_data)}\n\n"
+                if event_type in ('result', 'error'):
+                    break
+
+        return Response(generate(), mimetype='text/event-stream')
+        
+    except Exception as e:
+        logger.error(f"Multi-strategy stream start error: {e}")
         return jsonify({"error": str(e)}), 500
 
 # ==================== STRATEGY MANAGEMENT ENDPOINTS ====================
@@ -4234,20 +4305,18 @@ def manage_strategies():
         try:
             strategy_type = request.args.get('type', 'all')
             
-            # Predefined strategies
-            predefined = [
-                {'name': 'momentum', 'description': 'Momentum-based stock selection', 'category': 'Technical'},
-                {'name': 'piotroski', 'description': 'Piotroski F-Score value investing', 'category': 'Fundamental'},
-                {'name': 'swing', 'description': 'Swing trading opportunities', 'category': 'Technical'},
-                {'name': 'breakout', 'description': 'Breakout detection with volume', 'category': 'Technical'},
-                {'name': 'value', 'description': 'Value investing fundamentals', 'category': 'Fundamental'},
-                {'name': 'garp', 'description': 'Growth at a Reasonable Price', 'category': 'Hybrid'},
-                {'name': 'mean_reversion', 'description': 'Mean reversion strategy', 'category': 'Technical'},
-                {'name': 'quality_dividend', 'description': 'Quality dividend stocks', 'category': 'Fundamental'},
-                {'name': 'trend_following', 'description': 'Trend following momentum', 'category': 'Technical'},
-                {'name': 'contrarian', 'description': 'Contrarian oversold picks', 'category': 'Technical'},
-                {'name': 'quality_growth', 'description': 'Quality growth stocks', 'category': 'Fundamental'},
-            ]
+            # DYNAMIC FETCH: Pull all strategies directly from the backend engine
+            engine_data = screener._interactive.get_predefined_strategies()
+            engine_strategies = engine_data.get('strategies', {})
+            
+            predefined = []
+            for strat_id, strat_data in engine_strategies.items():
+                predefined.append({
+                    'name': strat_id, # Frontend uses this ID for routing
+                    'display_name': strat_data.get('name', strat_id.title()),
+                    'description': strat_data.get('description', ''),
+                    'category': strat_data.get('category', 'Technical')
+                })
             
             # Load custom strategies from file if exists
             custom = []
@@ -4530,9 +4599,16 @@ def login():
     })
 
 @app.route('/api/auth/me', methods=['GET'])
-@jwt_required()
 def get_current_user():
+    try:
+        verify_jwt_in_request(optional=True)
+    except JWTExtendedException:
+        return "", 204
+
     user_id = get_jwt_identity()
+    if not user_id:
+        return "", 204
+
     user = user_manager.get_user_by_id(user_id)
     if not user:
         return jsonify({"error": "User not found"}), 404
@@ -5000,20 +5076,24 @@ def evaluate_strategies(ticker):
     if not _HAS_STRATEGY_ENGINE:
         return jsonify({"error": "Advanced Strategy Engine not available"}), 503
     try:
-        import yfinance as yf
         data = request.get_json(silent=True) or {}
-        strategy_names = data.get('strategies')  # None = all strategies
-        period = data.get('period', '1y')
+        strategy_names = data.get('strategies')
 
         normalized_ticker = _normalize_ticker_symbol(ticker)
-        yf_symbol = _to_yfinance_symbol(normalized_ticker, exchange='NSE')
-        df = yf.download(yf_symbol, period=period, progress=False, auto_adjust=True)
-        if df is None or df.empty:
+        raw_data = pipeline.get_ticker_history(normalized_ticker)
+        
+        if not raw_data:
             return jsonify({"error": f"No data for {normalized_ticker}"}), 404
-
-        # Flatten multi-level columns if present
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
+            
+        df = pd.DataFrame(raw_data)
+        if df.empty:
+            return jsonify({"error": f"No data for {normalized_ticker}"}), 404
+            
+        df = df.rename(columns={'open': 'Open', 'high': 'High', 'low': 'Low', 'close': 'Close', 'volume': 'Volume', 'date': 'Date'})
+        if 'Date' in df.columns:
+            df.set_index('Date', inplace=True)
+            df.index = pd.to_datetime(df.index)
+        df = df.sort_index()
 
         engine = get_strategy_engine()
         results = engine.evaluate_multiple_strategies(df, strategy_names)
@@ -5040,20 +5120,25 @@ def multi_strategy_screen(ticker):
     if not _HAS_STRATEGY_ENGINE:
         return jsonify({"error": "Advanced Strategy Engine not available"}), 503
     try:
-        import yfinance as yf
         data = request.get_json(silent=True) or {}
         min_passing = data.get('min_strategies_passing', 2)
         min_confidence = data.get('min_confidence', 60)
-        period = data.get('period', '1y')
 
         normalized_ticker = _normalize_ticker_symbol(ticker)
-        yf_symbol = _to_yfinance_symbol(normalized_ticker, exchange='NSE')
-        df = yf.download(yf_symbol, period=period, progress=False, auto_adjust=True)
-        if df is None or df.empty:
+        raw_data = pipeline.get_ticker_history(normalized_ticker)
+        
+        if not raw_data:
             return jsonify({"error": f"No data for {normalized_ticker}"}), 404
-
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
+            
+        df = pd.DataFrame(raw_data)
+        if df.empty:
+            return jsonify({"error": f"No data for {normalized_ticker}"}), 404
+            
+        df = df.rename(columns={'open': 'Open', 'high': 'High', 'low': 'Low', 'close': 'Close', 'volume': 'Volume', 'date': 'Date'})
+        if 'Date' in df.columns:
+            df.set_index('Date', inplace=True)
+            df.index = pd.to_datetime(df.index)
+        df = df.sort_index()
 
         engine = get_strategy_engine()
         result = engine.multi_strategy_screen(df, min_passing, min_confidence)

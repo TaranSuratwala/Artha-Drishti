@@ -34,6 +34,7 @@ const INITIAL_STRATEGIES = [
     { id: 'mean_reversion', name: 'Mean Reversion', icon: ArrowDownRight, color: 'orange' },
     { id: 'quality_dividend', name: 'Dividend Quality', icon: DollarSign, color: 'cyan' },
     { id: 'trend_following', name: 'Trend Following', icon: TrendingUp, color: 'teal' },
+    { id: 'macd_triple_alignment', name: 'Triple MACD', icon: Crosshair, color: 'amber' },
     { id: 'contrarian', name: 'Contrarian', icon: ArrowDownRight, color: 'red' },
     { id: 'quality_growth', name: 'Quality Growth', icon: Star, color: 'violet' }
 ];
@@ -584,14 +585,14 @@ export default function AuthenticatedApp({ theme, toggleTheme }) {
         }
     };
 
-    const handleOpenTicker = async (ticker) => {
+    const handleOpenTicker = async (ticker, initialTab = 'overview') => {
         const normalizedSelection = String(ticker || '').trim().toUpperCase();
         if (!normalizedSelection) return;
 
         setSelectedTicker(normalizedSelection);
         setChartData([]);
         setPrediction(null);
-        setModalTab('overview');
+        setModalTab(initialTab);
         setFundamentals(null);
         setRiskMetrics(null);
         setStrategyEval(null);
@@ -928,14 +929,15 @@ export default function AuthenticatedApp({ theme, toggleTheme }) {
     };
 
     // Multi-strategy handler
-    const handleMultiStrategy = async (strategies, minOverlap) => {
+    const handleMultiStrategy = async (strategies, minOverlap, extraOpts = {}) => {
         const strategyCount = Array.isArray(strategies) ? strategies.length : 0;
         const heavyScan = strategyCount >= 5 || minOverlap >= 4;
 
-        const result = await api.runMultiStrategy(strategies, minOverlap, {
-            maxTickers: heavyScan ? 1000 : 800,
+        const result = await api.runMultiStrategyStream(strategies, minOverlap, {
+            maxTickers: 3000,
             maxResults: heavyScan ? 220 : 150,
-            timeout: heavyScan ? 360_000 : 300_000,
+            timeBudgetSeconds: heavyScan ? 360 : 300,
+            ...extraOpts
         });
         return result;
     };
@@ -1654,6 +1656,11 @@ export default function AuthenticatedApp({ theme, toggleTheme }) {
                                                                             <Button onClick={() => handleOpenTicker(row.ticker)} size="sm" variant="secondary" className="industry-action-btn">
                                                                                 Analyze
                                                                             </Button>
+                                                                            {row.prediction_available && (
+                                                                                <Button onClick={() => handleOpenTicker(row.ticker, 'ai')} size="sm" variant="purple" className="industry-action-btn ml-2">
+                                                                                    Predict
+                                                                                </Button>
+                                                                            )}
                                                                         </td>
                                                                     </tr>
                                                                 );

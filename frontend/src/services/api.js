@@ -334,7 +334,7 @@ export async function trainModel(ticker) {
 const BUILTIN_STRATEGY_IDS = new Set([
     'momentum', 'piotroski', 'swing', 'breakout', 'value', 'garp',
     'mean_reversion', 'quality_dividend', 'trend_following', 'contrarian',
-    'quality_growth', 'custom'
+    'macd_triple_alignment', 'quality_growth', 'custom'
 ]);
 
 export async function runScreener(strategy, params = {}) {
@@ -360,7 +360,13 @@ export async function runMultiStrategy(strategies, minOverlap = 2, opts = {}) {
         maxTickers = 800,
         maxResults = 150,
         timeout = 300_000,
+        timeBudgetSeconds = null,
     } = opts;
+
+    const timeoutSeconds = Math.max(60, Math.floor(timeout / 1000));
+    const budgetSeconds = typeof timeBudgetSeconds === 'number'
+        ? timeBudgetSeconds
+        : Math.max(60, timeoutSeconds - 45);
 
     return post(
         '/screen/multi',
@@ -369,9 +375,102 @@ export async function runMultiStrategy(strategies, minOverlap = 2, opts = {}) {
             min_overlap: minOverlap,
             max_tickers: maxTickers,
             max_results: maxResults,
+            time_budget_seconds: budgetSeconds,
         },
         { timeout, retries: 1 },
     );
+}
+
+export async function runMultiStrategyStream(strategies, minOverlap = 2, opts = {}) {
+    const {
+        maxTickers = 3000,
+        maxResults = 150,
+        timeBudgetSeconds = null,
+        onProgress = null,
+        signal = null,
+    } = opts;
+
+    const payload = {
+        strategies,
+        min_overlap: minOverlap,
+        max_tickers: maxTickers,
+        max_results: maxResults,
+        time_budget_seconds: timeBudgetSeconds,
+    };
+
+    try {
+        const res = await fetch(`${API_BASE}/screen/multi/stream`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...authHeaders()
+            },
+            body: JSON.stringify(payload),
+            signal
+        });
+
+        if (!res.ok) {
+            const errData = await res.json().catch(() => ({}));
+            throw new Error(errData.error || `HTTP error ${res.status}`);
+        }
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let finalResult = null;
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            
+            buffer += decoder.decode(value, { stream: true });
+            
+            // Parse SSE chunks separated by \n\n
+            const parts = buffer.split('\n\n');
+            buffer = parts.pop() || ''; // Keep the last incomplete chunk in buffer
+            
+            for (const chunk of parts) {
+                if (!chunk.trim()) continue;
+                
+                let eventType = 'message';
+                let data = null;
+                
+                const lines = chunk.split('\n');
+                for (const line of lines) {
+                    if (line.startsWith('event:')) {
+                        eventType = line.substring(6).trim();
+                    } else if (line.startsWith('data:')) {
+                        try {
+                            data = JSON.parse(line.substring(5).trim());
+                        } catch(e) {
+                            console.error('SSE JSON parse error:', e, line);
+                        }
+                    }
+                }
+                
+                if (eventType === 'progress' && data && onProgress) {
+                    onProgress(data);
+                } else if (eventType === 'result' && data) {
+                    finalResult = data;
+                } else if (eventType === 'error' && data) {
+                    throw new Error(data);
+                }
+            }
+        }
+        
+        if (!finalResult) {
+            throw new Error('Stream ended without returning a final result');
+        }
+        return finalResult;
+    } catch (err) {
+        if (err.name === 'AbortError') {
+            // Throw custom ApiError structure so the UI knows it was cancelled
+            const cancelErr = new Error('Request cancelled');
+            cancelErr.status = 0;
+            throw cancelErr;
+        }
+        throw err;
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

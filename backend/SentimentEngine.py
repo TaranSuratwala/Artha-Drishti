@@ -51,12 +51,26 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 # ---- Try importing optional NLP packages ----
+_HAS_VADER = False
+_vader_import_error = None
 try:
     from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
     _HAS_VADER = True
-except ImportError:
-    _HAS_VADER = False
-    logger.info("vaderSentiment not installed — using TextBlob only")
+except Exception as exc:
+    _vader_import_error = exc
+
+if not _HAS_VADER:
+    try:
+        from vader_sentiment.vader_sentiment import SentimentIntensityAnalyzer
+        _HAS_VADER = True
+        _vader_import_error = None
+    except Exception as exc:
+        if _vader_import_error is None:
+            _vader_import_error = exc
+        logger.info(
+            "vaderSentiment not installed — using TextBlob only (%s)",
+            _vader_import_error,
+        )
 
 try:
     from textblob import TextBlob

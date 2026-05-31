@@ -14,6 +14,8 @@ export const MultiStrategyPanel = ({ onAnalyze, onRunMultiStrategy, availableStr
     const [results, setResults] = useState(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
+    const [warning, setWarning] = useState(null);
+    const [progress, setProgress] = useState(null);
 
     const toggleStrategy = (strategyId) => {
         setSelectedStrategies(prev =>
@@ -30,12 +32,19 @@ export const MultiStrategyPanel = ({ onAnalyze, onRunMultiStrategy, availableStr
         }
 
         setError(null);
+        setWarning(null);
         setLoading(true);
         setResults(null);
+        setProgress(null);
 
         try {
-            const data = await onRunMultiStrategy(selectedStrategies, minOverlap);
+            const data = await onRunMultiStrategy(selectedStrategies, minOverlap, {
+                onProgress: (p) => setProgress(p)
+            });
             setResults(data);
+            if (data?.timed_out) {
+                setWarning('Scan hit the time limit and returned partial results. Try fewer strategies or a lower overlap for a complete run.');
+            }
         } catch (err) {
             const rawMessage = String(err?.message || '').toLowerCase();
             if (rawMessage.includes('request cancelled') || rawMessage.includes('timeout')) {
@@ -118,25 +127,45 @@ export const MultiStrategyPanel = ({ onAnalyze, onRunMultiStrategy, availableStr
                     </div>
                 )}
 
+                {/* Warning Display */}
+                {warning && !error && (
+                    <div className="mb-4 p-3 bg-amber-500/15 border border-amber-500/40 rounded-xl text-amber-200 text-sm">
+                        {warning}
+                    </div>
+                )}
+
                 {/* Run Button */}
                 <Button
                     onClick={handleRunScan}
                     disabled={loading || selectedStrategies.length < 2}
                     variant="purple"
                     size="lg"
-                    className="w-full"
+                    className="w-full relative overflow-hidden group"
                 >
-                    {loading ? (
-                        <>
-                            <RefreshCw className="w-5 h-5 animate-spin" />
-                            Scanning across {selectedStrategies.length} strategies...
-                        </>
-                    ) : (
-                        <>
-                            <Play className="w-5 h-5" />
-                            Find Overlapping Stocks
-                        </>
+                    {/* Background Progress Fill */}
+                    {loading && progress && progress.total > 0 && (
+                        <div 
+                            className="absolute inset-y-0 left-0 bg-white/20 transition-all duration-300"
+                            style={{ width: `${(progress.processed / progress.total) * 100}%` }}
+                        />
                     )}
+                    
+                    <span className="relative z-10 flex items-center justify-center gap-2">
+                        {loading ? (
+                            <>
+                                <RefreshCw className="w-5 h-5 animate-spin" />
+                                {progress?.phase === 'loading' ? progress.message : 
+                                 progress?.phase === 'evaluating' ? `Scanning... ${Math.round((progress.processed / progress.total) * 100)}% (${progress.processed}/${progress.total})` :
+                                 progress?.phase === 'ranking' ? 'Ranking results...' :
+                                 `Scanning across ${selectedStrategies.length} strategies...`}
+                            </>
+                        ) : (
+                            <>
+                                <Play className="w-5 h-5 group-hover:scale-110 transition-transform" />
+                                Find Overlapping Stocks
+                            </>
+                        )}
+                    </span>
                 </Button>
             </Card>
 
@@ -204,6 +233,11 @@ export const MultiStrategyPanel = ({ onAnalyze, onRunMultiStrategy, availableStr
                                                     <ChevronRight className="w-4 h-4" />
                                                     Analyze
                                                 </Button>
+                                                {row.prediction_available && (
+                                                    <Button onClick={() => onAnalyze && onAnalyze(row.ticker, 'ai')} size="sm" variant="purple" className="ml-2">
+                                                        Predict
+                                                    </Button>
+                                                )}
                                             </td>
                                         </tr>
                                     ))}

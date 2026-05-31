@@ -1332,58 +1332,14 @@ Features:
 - Export/Import Strategies
 - API-Ready Endpoints
 - React Frontend Integration
+- Optimized Bulk Screening
 
 Author: GenAI Stock Intelligence System
-Version: 3.0
+Version: 3.1 (Optimized)
 """
 
 import pandas as pd
 import numpy as np
-
-# Optional dependency: pandas_ta is not yet compatible with Python 3.14.
-# We fall back to a lightweight shim so the rest of the code keeps working
-# even when pandas_ta cannot be installed.
-try:
-    import pandas_ta as ta  # type: ignore
-except Exception:  # pragma: no cover - environment compatibility shim
-    ta = None
-
-    class _DummyTaAccessor:
-        """Minimal .ta accessor providing no-op indicator methods.
-
-        This prevents import-time crashes on Python versions where pandas_ta
-        is unavailable. All callers already wrap ta-usage in try/except, so
-        returning None is safe and simply disables those extra indicators.
-        """
-
-        def __init__(self, df: pd.DataFrame):
-            self._df = df
-
-        def macd(self, *args, **kwargs):
-            return None
-
-        def adx(self, *args, **kwargs):
-            return None
-
-        def rsi(self, *args, **kwargs):
-            return None
-
-        def willr(self, *args, **kwargs):
-            return None
-
-        def atr(self, *args, **kwargs):
-            return None
-
-        def bbands(self, *args, **kwargs):
-            return None
-
-        def obv(self, *args, **kwargs):
-            return None
-
-    # Attach a .ta accessor on DataFrame instances if pandas_ta is missing.
-    if not hasattr(pd.DataFrame, "ta"):
-        pd.DataFrame.ta = property(lambda self: _DummyTaAccessor(self))
-
 import yfinance as yf
 from typing import Dict, List, Optional, Tuple, Any, Union
 from dataclasses import dataclass, field, asdict
@@ -1393,6 +1349,8 @@ import logging
 import sys
 import json
 import time
+import math
+import copy
 from pathlib import Path
 import warnings
 from collections import defaultdict
@@ -1458,6 +1416,12 @@ class IndicatorCatalog:
                 {"id": "rsi_14", "name": "RSI 14", "description": "14-day Relative Strength Index", "typical_range": "0-100"},
                 {"id": "rsi_21", "name": "RSI 21", "description": "21-day Relative Strength Index", "typical_range": "0-100"},
                 {"id": "macd_hist", "name": "MACD Histogram", "description": "MACD Histogram (12,26,9)"},
+                {"id": "macd_daily", "name": "MACD Daily", "description": "Daily MACD Line (12,26,9)"},
+                {"id": "macd_weekly", "name": "MACD Weekly", "description": "Weekly MACD Line (12,26,9)"},
+                {"id": "macd_monthly", "name": "MACD Monthly", "description": "Monthly MACD Line (12,26,9)"},
+                {"id": "macd_daily_increasing", "name": "MACD Daily Increasing", "description": "Daily MACD is increasing (1=Yes, 0=No)"},
+                {"id": "macd_weekly_increasing", "name": "MACD Weekly Increasing", "description": "Weekly MACD is increasing (1=Yes, 0=No)"},
+                {"id": "macd_monthly_increasing", "name": "MACD Monthly Increasing", "description": "Monthly MACD is increasing (1=Yes, 0=No)"},
                 {"id": "willr_14", "name": "Williams %R 14", "description": "14-day Williams %R", "typical_range": "-100 to 0"},
                 {"id": "willr_20", "name": "Williams %R 20", "description": "20-day Williams %R", "typical_range": "-100 to 0"},
                 {"id": "price_change_1d", "name": "1-Day % Change", "description": "1-day price change percentage"},
@@ -1512,14 +1476,14 @@ class IndicatorCatalog:
             ],
             
             "Profitability Metrics": [
-                {"id": "profit_margin", "name": "Profit Margin", "description": "Net Profit Margin (%)"},
-                {"id": "roe", "name": "ROE", "description": "Return on Equity (%)"},
-                {"id": "roa", "name": "ROA", "description": "Return on Assets (%)"},
+                {"id": "profit_margin", "name": "Profit Margin", "description": "Net Profit Margin (0-1)"},
+                {"id": "roe", "name": "ROE", "description": "Return on Equity (0-1)"},
+                {"id": "roa", "name": "ROA", "description": "Return on Assets (0-1)"},
             ],
             
             "Growth Metrics": [
-                {"id": "revenue_growth", "name": "Revenue Growth", "description": "Year-over-Year Revenue Growth (%)"},
-                {"id": "earnings_growth", "name": "Earnings Growth", "description": "Year-over-Year Earnings Growth (%)"},
+                {"id": "revenue_growth", "name": "Revenue Growth", "description": "Year-over-Year Revenue Growth (0-1)"},
+                {"id": "earnings_growth", "name": "Earnings Growth", "description": "Year-over-Year Earnings Growth (0-1)"},
             ],
             
             "Financial Health": [
@@ -1529,8 +1493,8 @@ class IndicatorCatalog:
             ],
             
             "Dividend Metrics": [
-                {"id": "dividend_yield", "name": "Dividend Yield", "description": "Annual Dividend / Stock Price (%)"},
-                {"id": "payout_ratio", "name": "Payout Ratio", "description": "Dividends / Net Income (%)"},
+                {"id": "dividend_yield", "name": "Dividend Yield", "description": "Annual Dividend / Stock Price (0-1)"},
+                {"id": "payout_ratio", "name": "Payout Ratio", "description": "Dividends / Net Income (0-1)"},
             ],
             
             "Risk Metrics": [
@@ -1576,6 +1540,8 @@ class IndicatorCatalog:
         fund = IndicatorCatalog.get_fundamental_indicators()
         for category, items in fund.items():
             indicators.extend([item['id'] for item in items])
+
+        indicators.extend(['open', 'high', 'low', 'close', 'adj_close', 'volume'])
         
         return indicators
 
@@ -1820,6 +1786,24 @@ class StrategyLibrary:
                 "rationale": "Premium quality metrics with reasonable valuations"
             },
             
+            "macd_triple_alignment": {
+                "name": "3 MACD Alignment",
+                "description": "All timeframes (daily, weekly, monthly) have MACD > 0 and increasing",
+                "strategy_type": "technical",
+                "category": "Trend",
+                "risk_level": "Medium",
+                "holding_period": "1-3 months",
+                "conditions": [
+                    {"indicator": "macd_daily", "operator": ">", "value": 0, "weight": 2.0},
+                    {"indicator": "macd_daily_increasing", "operator": "==", "value": 1, "weight": 1.5},
+                    {"indicator": "macd_weekly", "operator": ">", "value": 0, "weight": 2.0},
+                    {"indicator": "macd_weekly_increasing", "operator": "==", "value": 1, "weight": 1.5},
+                    {"indicator": "macd_monthly", "operator": ">", "value": 0, "weight": 2.0},
+                    {"indicator": "macd_monthly_increasing", "operator": "==", "value": 1, "weight": 1.5},
+                ],
+                "rationale": "Triple confirmation of bullish momentum across all timeframes"
+            },
+            
             # ==================== STRATEGY ALIASES ====================
             # These match the names expected by StockScreener wrapper
             
@@ -1973,6 +1957,7 @@ class TechnicalIndicatorEngine:
         try:
             self._add_moving_averages()
             self._add_macd()
+            self._add_multi_timeframe_macd()
             self._add_adx()
             self._add_oscillators()
             self._add_price_momentum()
@@ -1987,14 +1972,14 @@ class TechnicalIndicatorEngine:
     def _add_moving_averages(self):
         """Add moving averages"""
         for period in [5, 10, 20, 50, 100, 200]:
-            self.df[f'sma_{period}'] = self.df['close'].rolling(window=period).mean()
+            min_periods = max(1, period // 2)
+            self.df[f'sma_{period}'] = self.df['close'].rolling(window=period, min_periods=min_periods).mean()
             self.df[f'ema_{period}'] = self.df['close'].ewm(span=period, adjust=False).mean()
-            
-            if period <= 50:
-                weights = np.arange(1, period + 1)
-                self.df[f'wma_{period}'] = self.df['close'].rolling(window=period).apply(
-                    lambda prices: np.dot(prices, weights) / weights.sum(), raw=True
-                )
+
+            self.df[f'wma_{period}'] = self.df['close'].rolling(window=period, min_periods=min_periods).apply(
+                lambda prices: np.dot(prices, np.arange(1, len(prices) + 1)) / np.arange(1, len(prices) + 1).sum(),
+                raw=True
+            )
         
         # Hull Moving Average
         for period in [9, 16, 20]:
@@ -2011,8 +1996,8 @@ class TechnicalIndicatorEngine:
                     lambda x: np.dot(x, np.arange(1, len(x)+1)) / np.arange(1, len(x)+1).sum() if len(x) == sqrt_period else np.nan,
                     raw=True
                 )
-            except:
-                pass
+            except Exception as e:
+                logger.debug(f"HMA calculation failed for period {period}: {e}")
         
         # VWMA
         for period in [20, 50]:
@@ -2024,85 +2009,242 @@ class TechnicalIndicatorEngine:
     def _add_macd(self):
         """Add MACD indicators"""
         try:
-            macd = self.df.ta.macd(fast=12, slow=26, signal=9)
-            if macd is not None:
-                self.df = pd.concat([self.df, macd], axis=1)
-                if 'MACDh_12_26_9' in self.df.columns:
-                    self.df['macd_hist'] = self.df['MACDh_12_26_9']
-        except:
-            pass
+            import ta
+            macd = ta.trend.MACD(self.df['close'], window_slow=26, window_fast=12, window_sign=9)
+            self.df['macd'] = macd.macd()
+            self.df['macd_hist'] = macd.macd_diff()
+            self.df['macd_signal'] = macd.macd_signal()
+            return
+        except ImportError as e:
+            logger.debug(f"'ta' library not installed; MACD fallback: {e}")
+        except Exception as e:
+            logger.debug(f"MACD calculation failed: {e}")
+
+        try:
+            import pandas_ta as pta
+            macd = pta.macd(self.df['close'], fast=12, slow=26, signal=9)
+            if macd is not None and not macd.empty:
+                cols = macd.columns
+                self.df['macd'] = macd[cols[0]]
+                self.df['macd_hist'] = macd[cols[1]]
+                self.df['macd_signal'] = macd[cols[2]]
+        except ImportError as e:
+            logger.debug(f"pandas_ta not installed; MACD skipped: {e}")
+        except Exception as e:
+            logger.debug(f"MACD calculation failed: {e}")
+    
+    def _add_multi_timeframe_macd(self):
+        """Add multi-timeframe MACD (daily, weekly, monthly) indicators"""
+        try:
+            import ta
+            
+            # Daily MACD (already calculated or calculated here)
+            macd_daily = ta.trend.MACD(self.df['close'], window_slow=26, window_fast=12, window_sign=9).macd()
+            self.df['macd_daily'] = macd_daily
+            self.df['macd_daily_prev'] = self.df['macd_daily'].shift(1)
+            self.df['macd_daily_increasing'] = (self.df['macd_daily'] > self.df['macd_daily_prev']).astype(int)
+            
+            # Weekly MACD (approx 5 days)
+            df_weekly = self.df.copy()
+            if 'date' in df_weekly.columns and pd.api.types.is_datetime64_any_dtype(df_weekly['date']):
+                df_weekly = df_weekly.set_index('date').resample('W').agg({'close': 'last'}).dropna()
+            else:
+                # Approximate weekly by taking every 5th row
+                df_weekly = self.df.iloc[::5, :].copy()
+                
+            if len(df_weekly) > 30:
+                macd_weekly = ta.trend.MACD(df_weekly['close'], window_slow=26, window_fast=12, window_sign=9).macd()
+                df_weekly['macd_weekly'] = macd_weekly
+                df_weekly['macd_weekly_prev'] = df_weekly['macd_weekly'].shift(1)
+                df_weekly['macd_weekly_increasing'] = (df_weekly['macd_weekly'] > df_weekly['macd_weekly_prev']).astype(int)
+                
+                # Merge back
+                if 'date' in self.df.columns and pd.api.types.is_datetime64_any_dtype(self.df['date']):
+                    # Merge by date (ffill)
+                    merged = pd.merge_asof(self.df.sort_values('date'), df_weekly.reset_index().sort_values('date'), on='date', direction='backward')
+                    self.df['macd_weekly'] = merged['macd_weekly']
+                    self.df['macd_weekly_increasing'] = merged['macd_weekly_increasing']
+                else:
+                    # Index-based merge (ffill)
+                    self.df['macd_weekly'] = np.nan
+                    self.df['macd_weekly_increasing'] = np.nan
+                    for i in df_weekly.index:
+                        self.df.loc[i:, 'macd_weekly'] = df_weekly.loc[i, 'macd_weekly']
+                        self.df.loc[i:, 'macd_weekly_increasing'] = df_weekly.loc[i, 'macd_weekly_increasing']
+            else:
+                self.df['macd_weekly'] = np.nan
+                self.df['macd_weekly_increasing'] = 0
+                
+            # Monthly MACD (approx 21 days)
+            df_monthly = self.df.copy()
+            if 'date' in df_monthly.columns and pd.api.types.is_datetime64_any_dtype(df_monthly['date']):
+                df_monthly = df_monthly.set_index('date').resample('ME').agg({'close': 'last'}).dropna()
+            else:
+                df_monthly = self.df.iloc[::21, :].copy()
+                
+            if len(df_monthly) > 30:
+                macd_monthly = ta.trend.MACD(df_monthly['close'], window_slow=26, window_fast=12, window_sign=9).macd()
+                df_monthly['macd_monthly'] = macd_monthly
+                df_monthly['macd_monthly_prev'] = df_monthly['macd_monthly'].shift(1)
+                df_monthly['macd_monthly_increasing'] = (df_monthly['macd_monthly'] > df_monthly['macd_monthly_prev']).astype(int)
+                
+                # Merge back
+                if 'date' in self.df.columns and pd.api.types.is_datetime64_any_dtype(self.df['date']):
+                    merged = pd.merge_asof(self.df.sort_values('date'), df_monthly.reset_index().sort_values('date'), on='date', direction='backward')
+                    self.df['macd_monthly'] = merged['macd_monthly']
+                    self.df['macd_monthly_increasing'] = merged['macd_monthly_increasing']
+                else:
+                    self.df['macd_monthly'] = np.nan
+                    self.df['macd_monthly_increasing'] = np.nan
+                    for i in df_monthly.index:
+                        self.df.loc[i:, 'macd_monthly'] = df_monthly.loc[i, 'macd_monthly']
+                        self.df.loc[i:, 'macd_monthly_increasing'] = df_monthly.loc[i, 'macd_monthly_increasing']
+            else:
+                self.df['macd_monthly'] = np.nan
+                self.df['macd_monthly_increasing'] = 0
+                
+        except Exception as e:
+            logger.debug(f"Multi-timeframe MACD calculation failed: {e}")
     
     def _add_adx(self):
         """Add ADX indicators"""
         try:
+            import ta
             for period in [14, 20]:
-                adx = self.df.ta.adx(length=period)
-                if adx is not None:
-                    self.df = pd.concat([self.df, adx], axis=1)
-                    if f'ADX_{period}' in self.df.columns:
-                        self.df[f'adx_{period}'] = self.df[f'ADX_{period}']
-        except:
-            pass
+                self.df[f'adx_{period}'] = ta.trend.ADXIndicator(self.df['high'], self.df['low'], self.df['close'], window=period).adx()
+            return
+        except ImportError as e:
+            logger.debug(f"'ta' library not installed; ADX fallback: {e}")
+        except Exception as e:
+            logger.debug(f"ADX calculation failed: {e}")
+
+        try:
+            import pandas_ta as pta
+            for period in [14, 20]:
+                adx = pta.adx(self.df['high'], self.df['low'], self.df['close'], length=period)
+                if adx is not None and not adx.empty:
+                    col = f'ADX_{period}'
+                    if col in adx.columns:
+                        self.df[f'adx_{period}'] = adx[col]
+        except ImportError as e:
+            logger.debug(f"pandas_ta not installed; ADX skipped: {e}")
+        except Exception as e:
+            logger.debug(f"ADX calculation failed: {e}")
     
     def _add_oscillators(self):
         """Add momentum oscillators"""
-        for period in [9, 14, 21, 25]:
-            try:
-                self.df[f'rsi_{period}'] = self.df.ta.rsi(length=period)
-            except:
-                pass
-        
-        for period in [14, 20]:
-            try:
-                self.df[f'willr_{period}'] = self.df.ta.willr(length=period)
-            except:
-                pass
+        try:
+            import ta
+            for period in [9, 14, 21, 25]:
+                self.df[f'rsi_{period}'] = ta.momentum.RSIIndicator(self.df['close'], window=period).rsi()
+            
+            for period in [14, 20]:
+                self.df[f'willr_{period}'] = ta.momentum.WilliamsRIndicator(self.df['high'], self.df['low'], self.df['close'], lbp=period).williams_r()
+            return
+        except ImportError as e:
+            logger.debug(f"'ta' library not installed; oscillator fallback: {e}")
+        except Exception as e:
+            logger.debug(f"Oscillator calculation failed: {e}")
+
+        try:
+            import pandas_ta as pta
+            for period in [9, 14, 21, 25]:
+                rsi = pta.rsi(self.df['close'], length=period)
+                if rsi is not None:
+                    self.df[f'rsi_{period}'] = rsi
+
+            for period in [14, 20]:
+                willr = pta.willr(self.df['high'], self.df['low'], self.df['close'], length=period)
+                if willr is not None:
+                    self.df[f'willr_{period}'] = willr
+        except ImportError as e:
+            logger.debug(f"pandas_ta not installed; oscillators skipped: {e}")
+        except Exception as e:
+            logger.debug(f"Oscillator calculation failed: {e}")
     
     def _add_price_momentum(self):
         """Add price-based momentum"""
         for period in [1, 3, 5, 10, 20, 50]:
             self.df[f'price_change_{period}d'] = self.df['close'].pct_change(period) * 100
             self.df[f'log_return_{period}d'] = np.log(self.df['close'] / self.df['close'].shift(period))
+            
+        # Add 52-week high distance (252 trading days)
+        high_252d = self.df['high'].rolling(window=252, min_periods=1).max()
+        self.df['distance_from_high_252d'] = ((high_252d - self.df['close']) / high_252d) * 100
     
     def _add_volatility(self):
         """Add volatility indicators"""
-        for period in [7, 14, 21]:
-            try:
-                self.df[f'atr_{period}'] = self.df.ta.atr(length=period)
-            except:
-                pass
-        
         try:
+            import ta
+            for period in [7, 14, 21]:
+                self.df[f'atr_{period}'] = ta.volatility.AverageTrueRange(self.df['high'], self.df['low'], self.df['close'], window=period).average_true_range()
+            
             for period, std in [(20, 2), (20, 3)]:
-                bb = self.df.ta.bbands(length=period, std=std)
-                if bb is not None:
-                    self.df = pd.concat([self.df, bb], axis=1)
-                    if f'BBU_{period}_{std}.0' in self.df.columns:
-                        self.df[f'bb_width_{period}_{std}'] = (
-                            (self.df[f'BBU_{period}_{std}.0'] - self.df[f'BBL_{period}_{std}.0']) /
-                            self.df[f'BBM_{period}_{std}.0']
-                        )
-                        self.df[f'bb_percent_{period}_{std}'] = (
-                            (self.df['close'] - self.df[f'BBL_{period}_{std}.0']) /
-                            (self.df[f'BBU_{period}_{std}.0'] - self.df[f'BBL_{period}_{std}.0'])
-                        )
-        except:
-            pass
+                bb = ta.volatility.BollingerBands(self.df['close'], window=period, window_dev=std)
+                self.df[f'bb_width_{period}_{std}'] = (bb.bollinger_hband() - bb.bollinger_lband()) / bb.bollinger_mavg()
+                self.df[f'bb_percent_{period}_{std}'] = (self.df['close'] - bb.bollinger_lband()) / (bb.bollinger_hband() - bb.bollinger_lband())
+            return
+        except ImportError as e:
+            logger.debug(f"'ta' library not installed; volatility fallback: {e}")
+        except Exception as e:
+            logger.debug(f"Volatility calculation failed: {e}")
+
+        try:
+            import pandas_ta as pta
+            for period in [7, 14, 21]:
+                atr = pta.atr(self.df['high'], self.df['low'], self.df['close'], length=period)
+                if atr is not None:
+                    self.df[f'atr_{period}'] = atr
+
+            for period, std in [(20, 2), (20, 3)]:
+                bb = pta.bbands(self.df['close'], length=period, std=std)
+                if bb is None or bb.empty:
+                    continue
+                upper = bb.get(f'BBU_{period}_{float(std)}', None)
+                lower = bb.get(f'BBL_{period}_{float(std)}', None)
+                middle = bb.get(f'BBM_{period}_{float(std)}', None)
+                if upper is None or lower is None:
+                    continue
+                denom = (middle if middle is not None else (upper + lower) / 2).replace(0, np.nan)
+                self.df[f'bb_width_{period}_{std}'] = (upper - lower) / denom
+                if f'BBP_{period}_{float(std)}' in bb.columns:
+                    self.df[f'bb_percent_{period}_{std}'] = bb[f'BBP_{period}_{float(std)}']
+                else:
+                    self.df[f'bb_percent_{period}_{std}'] = (self.df['close'] - lower) / (upper - lower)
+        except ImportError as e:
+            logger.debug(f"pandas_ta not installed; volatility indicators skipped: {e}")
+        except Exception as e:
+            logger.debug(f"Volatility calculation failed: {e}")
     
     def _add_volume(self):
         """Add volume indicators"""
         for period in [10, 20, 50]:
             self.df[f'volume_sma_{period}'] = self.df['volume'].rolling(window=period).mean()
-            self.df[f'volume_ratio_{period}'] = self.df['volume'] / (self.df[f'volume_sma_{period}'] + 1)
+            denom = self.df[f'volume_sma_{period}'].replace(0, np.nan)
+            self.df[f'volume_ratio_{period}'] = self.df['volume'] / denom
         
         try:
-            self.df['obv'] = self.df.ta.obv()
-        except:
-            pass
+            import ta
+            self.df['obv'] = ta.volume.OnBalanceVolumeIndicator(self.df['close'], self.df['volume']).on_balance_volume()
+            return
+        except ImportError as e:
+            logger.debug(f"'ta' library not installed; OBV fallback: {e}")
+        except Exception as e:
+            logger.debug(f"OBV calculation failed: {e}")
+
+        try:
+            import pandas_ta as pta
+            obv = pta.obv(self.df['close'], self.df['volume'])
+            if obv is not None:
+                self.df['obv'] = obv
+        except ImportError as e:
+            logger.debug(f"pandas_ta not installed; OBV skipped: {e}")
+        except Exception as e:
+            logger.debug(f"OBV calculation failed: {e}")
     
     def _add_support_resistance(self):
         """Add support and resistance levels"""
-        for period in [5, 10, 20, 52, 252]:
+        for period in [5, 10, 20, 52]:
             self.df[f'high_{period}d'] = self.df['high'].rolling(window=period).max()
             self.df[f'low_{period}d'] = self.df['low'].rolling(window=period).min()
             self.df[f'distance_from_high_{period}d'] = (
@@ -2111,6 +2253,10 @@ class TechnicalIndicatorEngine:
             self.df[f'distance_from_low_{period}d'] = (
                 (self.df['close'] - self.df[f'low_{period}d']) / self.df[f'low_{period}d']
             ) * 100
+
+        low_252d = self.df['low'].rolling(window=252, min_periods=1).min()
+        self.df['low_252d'] = low_252d
+        self.df['distance_from_low_252d'] = ((self.df['close'] - low_252d) / low_252d) * 100
 
 
 # ==================== PATTERN RECOGNITION ====================
@@ -2202,10 +2348,10 @@ class FundamentalAnalysisEngine:
     def __init__(self, ticker: str):
         self.ticker = ticker
     
-    @lru_cache(maxsize=128)
     def fetch_fundamentals(self) -> Dict[str, Any]:
         """Fetch fundamental data from Yahoo Finance"""
         try:
+            import yfinance as yf
             search_ticker = self.ticker
             if not search_ticker.endswith('.NS') and not search_ticker.endswith('.BO'):
                 search_ticker = f"{self.ticker}.NS"
@@ -2231,8 +2377,7 @@ class FundamentalAnalysisEngine:
                 'payout_ratio': info.get('payoutRatio', 0),
                 'beta': info.get('beta', 1.0),
             }
-        except Exception as e:
-            logger.debug(f"Error fetching fundamentals for {self.ticker}: {e}")
+        except Exception:
             return {}
 
 
@@ -2368,6 +2513,190 @@ class InteractiveStockScreener:
         self.strategy_manager = StrategyManager()
         self.max_workers = max_workers
         self.max_tickers = max_tickers
+
+    @staticmethod
+    def _safe_float(value: Any) -> Optional[float]:
+        try:
+            num = float(value)
+        except (TypeError, ValueError):
+            return None
+        if not np.isfinite(num):
+            return None
+        return num
+
+    @staticmethod
+    def _percent_to_decimal(value: Any) -> Optional[float]:
+        num = InteractiveStockScreener._safe_float(value)
+        if num is None:
+            return None
+        return num / 100.0 if num > 1 else num
+
+    def _apply_strategy_overrides(
+        self,
+        strategy: TradingStrategy,
+        overrides: Optional[Dict[str, Any]] = None,
+    ) -> Tuple[TradingStrategy, float, Optional[int]]:
+        if not overrides:
+            return strategy, 40.0, None
+
+        clean_overrides = {k: v for k, v in overrides.items() if v is not None}
+        if not clean_overrides:
+            return strategy, 40.0, None
+
+        conditions = copy.deepcopy(strategy.conditions)
+        min_score_pct = 40.0
+        min_conditions_required = None
+
+        min_score_override = self._safe_float(clean_overrides.get('min_score_pct'))
+        if min_score_override is not None:
+            min_score_pct = max(0.0, min(100.0, min_score_override))
+
+        def _update_condition(indicator: str, operator: Optional[str], value: Any) -> bool:
+            updated = False
+            for cond in conditions:
+                if cond.indicator == indicator and (operator is None or cond.operator == operator):
+                    if value is not None:
+                        cond.value = value
+                    updated = True
+            return updated
+
+        def _replace_indicator(old_indicator: str, new_indicator: str) -> bool:
+            replaced = False
+            for cond in conditions:
+                if cond.indicator == old_indicator:
+                    cond.indicator = new_indicator
+                    replaced = True
+            return replaced
+
+        name = strategy.name
+
+        if name == 'momentum':
+            lookback = clean_overrides.get('lookback_days')
+            min_return = self._safe_float(clean_overrides.get('min_return'))
+            volume_threshold = self._safe_float(
+                clean_overrides.get('volume_threshold') or clean_overrides.get('volume_ratio')
+            )
+
+            if lookback:
+                try:
+                    lookback_int = int(lookback)
+                except (TypeError, ValueError):
+                    lookback_int = None
+                if lookback_int in {1, 3, 5, 10, 20, 50}:
+                    new_indicator = f'price_change_{lookback_int}d'
+                    if _replace_indicator('price_change_20d', new_indicator) and min_return is not None:
+                        _update_condition(new_indicator, '>', min_return)
+            if min_return is not None:
+                _update_condition('price_change_20d', '>', min_return)
+            if volume_threshold is not None:
+                _update_condition('volume_ratio_20', '>', volume_threshold)
+
+        elif name == 'piotroski':
+            min_score = self._safe_float(clean_overrides.get('min_score'))
+            if min_score is not None and min_score > 0:
+                min_conditions_required = max(1, math.ceil(len(conditions) * (min_score / 9.0)))
+
+        elif name == 'swing':
+            rsi_low = self._safe_float(clean_overrides.get('rsi_oversold'))
+            rsi_high = self._safe_float(clean_overrides.get('rsi_overbought'))
+            if rsi_low is not None or rsi_high is not None:
+                low_val = rsi_low if rsi_low is not None else 30.0
+                high_val = rsi_high if rsi_high is not None else 70.0
+                for cond in conditions:
+                    if cond.indicator == 'rsi_14' and cond.operator == 'between':
+                        cond.value = (low_val, high_val)
+            min_volume = self._safe_float(clean_overrides.get('min_volume'))
+            if min_volume is not None:
+                if not _update_condition('volume', '>', min_volume):
+                    conditions.append(StrategyCondition('volume', '>', min_volume, 1.0))
+
+        elif name == 'breakout':
+            volume_threshold = self._safe_float(clean_overrides.get('volume_threshold'))
+            if volume_threshold is not None:
+                _update_condition('volume_ratio_20', '>', volume_threshold)
+            lookback = clean_overrides.get('lookback')
+            if lookback:
+                try:
+                    lookback_int = int(lookback)
+                except (TypeError, ValueError):
+                    lookback_int = None
+                if lookback_int in {5, 10, 20, 52, 252}:
+                    _replace_indicator('distance_from_high_252d', f'distance_from_high_{lookback_int}d')
+
+        elif name in {'value', 'value_investing'}:
+            max_pe = self._safe_float(clean_overrides.get('max_pe'))
+            if max_pe is not None:
+                _update_condition('trailing_pe', '<', max_pe)
+            min_roe = self._percent_to_decimal(clean_overrides.get('min_roe'))
+            if min_roe is not None:
+                _update_condition('roe', '>', min_roe)
+            min_dividend = self._percent_to_decimal(clean_overrides.get('min_dividend_yield'))
+            if min_dividend is not None:
+                if not _update_condition('dividend_yield', '>', min_dividend):
+                    conditions.append(StrategyCondition('dividend_yield', '>', min_dividend, 0.5))
+
+        elif name == 'garp':
+            max_peg = self._safe_float(clean_overrides.get('max_peg_ratio'))
+            if max_peg is not None:
+                _update_condition('peg_ratio', '<', max_peg)
+            min_earnings = self._percent_to_decimal(clean_overrides.get('min_earnings_growth'))
+            if min_earnings is not None:
+                _update_condition('earnings_growth', '>', min_earnings)
+            min_revenue = self._percent_to_decimal(clean_overrides.get('min_revenue_growth'))
+            if min_revenue is not None:
+                _update_condition('revenue_growth', '>', min_revenue)
+
+        elif name == 'quality_dividend':
+            min_dividend = self._percent_to_decimal(clean_overrides.get('min_dividend_yield'))
+            if min_dividend is not None:
+                _update_condition('dividend_yield', '>', min_dividend)
+
+        elif name == 'trend_following':
+            adx_threshold = self._safe_float(clean_overrides.get('adx_threshold'))
+            if adx_threshold is not None:
+                _update_condition('adx_14', '>', adx_threshold)
+
+            ema_short = clean_overrides.get('ema_short')
+            ema_long = clean_overrides.get('ema_long')
+            try:
+                ema_short_int = int(ema_short) if ema_short is not None else None
+                ema_long_int = int(ema_long) if ema_long is not None else None
+            except (TypeError, ValueError):
+                ema_short_int = None
+                ema_long_int = None
+
+            if ema_short_int in {5, 10, 20, 50, 100, 200}:
+                for cond in conditions:
+                    if cond.indicator == 'close' and cond.value == 'sma_50':
+                        cond.value = f'ema_{ema_short_int}'
+                for cond in conditions:
+                    if cond.indicator == 'sma_50':
+                        cond.indicator = f'ema_{ema_short_int}'
+            if ema_short_int in {5, 10, 20, 50, 100, 200} and ema_long_int in {5, 10, 20, 50, 100, 200}:
+                for cond in conditions:
+                    if cond.indicator == f'ema_{ema_short_int}' and cond.value == 'sma_200':
+                        cond.value = f'ema_{ema_long_int}'
+
+        elif name == 'contrarian':
+            rsi_threshold = self._safe_float(clean_overrides.get('rsi_threshold'))
+            if rsi_threshold is not None:
+                _update_condition('rsi_14', '<', rsi_threshold)
+
+        elif name == 'quality_growth':
+            min_roe = self._percent_to_decimal(clean_overrides.get('min_roe'))
+            if min_roe is not None:
+                _update_condition('roe', '>', min_roe)
+            min_revenue = self._percent_to_decimal(clean_overrides.get('min_revenue_growth'))
+            if min_revenue is not None:
+                _update_condition('revenue_growth', '>', min_revenue)
+
+        return TradingStrategy(
+            name=strategy.name,
+            description=strategy.description,
+            strategy_type=strategy.strategy_type,
+            conditions=conditions,
+            metadata=strategy.metadata,
+        ), min_score_pct, min_conditions_required
     
     # ==================== API METHODS FOR FRONTEND ====================
     
@@ -2405,18 +2734,6 @@ class InteractiveStockScreener:
     def create_custom_strategy(self, strategy_data: Dict) -> Dict:
         """
         Create a new custom strategy from frontend data
-        
-        Expected format:
-        {
-            'name': 'my_strategy',
-            'description': 'Strategy description',
-            'strategy_type': 'technical',
-            'conditions': [
-                {'indicator': 'rsi_14', 'operator': '>', 'value': 50, 'weight': 1.0},
-                ...
-            ],
-            'metadata': {...}
-        }
         """
         try:
             strategy = self.strategy_manager.create_strategy(strategy_data)
@@ -2449,6 +2766,11 @@ class InteractiveStockScreener:
             errors.append("At least one condition is required")
         
         all_indicators = IndicatorCatalog.get_all_indicators_flat()
+        valid_prefixes = (
+            'sma_', 'ema_', 'wma_', 'hma_', 'vwma_', 'rsi_', 'willr_', 'atr_', 'adx_',
+            'bb_', 'volume_ratio_', 'price_change_', 'distance_from_', 'log_return_', 'macd'
+        )
+        base_fields = {'open', 'high', 'low', 'close', 'adj_close', 'volume'}
         
         for i, condition in enumerate(conditions):
             indicator = condition.get('indicator')
@@ -2456,7 +2778,11 @@ class InteractiveStockScreener:
             value = condition.get('value')
             
             # Validate indicator exists
-            if indicator not in all_indicators and not indicator.startswith('sma_') and not indicator.startswith('ema_'):
+            if (
+                indicator not in all_indicators
+                and indicator not in base_fields
+                and not any(indicator.startswith(prefix) for prefix in valid_prefixes)
+            ):
                 errors.append(f"Condition {i+1}: Invalid indicator '{indicator}'")
             
             # Validate operator
@@ -2477,7 +2803,8 @@ class InteractiveStockScreener:
             'warnings': warnings
         }
     
-    def run_screening(self, strategy_name: str, max_results: int = 50) -> Dict:
+    def run_screening(self, strategy_name: str, max_results: int = 50,
+                      overrides: Optional[Dict[str, Any]] = None) -> Dict:
         """
         Run screening for a strategy
         Returns JSON-serializable results for frontend
@@ -2487,33 +2814,111 @@ class InteractiveStockScreener:
             start_time = time.time()
             
             strategy = self.strategy_manager.get_strategy(strategy_name)
+            strategy, min_score_pct, min_conditions_required = self._apply_strategy_overrides(
+                strategy, overrides
+            )
             tickers = self._get_tickers()
             
             if not tickers:
-                return {
-                    'status': 'error',
-                    'message': 'No tickers found'
-                }
+                return {'status': 'error', 'message': 'No tickers found'}
+            
+            # OPTIMIZATION: Fetch ALL features in one database query
+            tickers_to_process = tickers[:self.max_tickers]
+            bulk_features = self.pipeline.get_bulk_latest_features(tickers_to_process)
             
             results = []
             
-            # Screen stocks in parallel
-            with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+            def screen_ticker_single(ticker):
+                try:
+                    indicators = bulk_features.get(ticker)
+                    if not indicators:
+                        # Fallback to single fetch if missing
+                        df = self._fetch_stock_data(ticker)
+                        if df is None or df.empty: return None
+                        tech_engine = TechnicalIndicatorEngine(df)
+                        indicators = tech_engine.calculate_all_indicators().iloc[-1].to_dict()
+                    
+                    fundamentals = {}
+                    if strategy.strategy_type in ['fundamental', 'hybrid']:
+                        fundamentals = self._fetch_fundamentals_cached(ticker) or {}
+                        
+                    total_score = 0.0
+                    max_score = 0.0
+                    conditions_passed = 0
+                    
+                    verified_indicators = {}
+                    for condition in strategy.conditions:
+                        max_score += condition.weight
+                        passed, score = self._evaluate_condition(condition, indicators, fundamentals)
+                        
+                        if condition.indicator in indicators:
+                            verified_indicators[condition.indicator] = self._safe_float(indicators[condition.indicator])
+                        elif condition.indicator in fundamentals:
+                            verified_indicators[condition.indicator] = self._safe_float(fundamentals[condition.indicator])
+                            
+                        if passed:
+                            total_score += score
+                            conditions_passed += 1
+                            
+                    final_score = (total_score / max_score * 100) if max_score > 0 else 0
+                    
+                    if min_conditions_required is not None and conditions_passed < min_conditions_required:
+                        return None
+                    if final_score < min_score_pct:
+                        return None
+                        
+                    price_val = self._safe_float(indicators.get('close'))
+                    if price_val is None:
+                        return None
+                        
+                    rsi_val = self._safe_float(indicators.get('rsi_14'))
+                    price_change = self._safe_float(indicators.get('price_change_20d'))
+                    vol_ratio = self._safe_float(indicators.get('volume_ratio_20'))
+                    
+                    key_indicators = {
+                        'rsi_14': round(rsi_val, 2) if rsi_val is not None else None,
+                        'price_change_20d': round(price_change, 2) if price_change is not None else None,
+                        'volume_ratio_20': round(vol_ratio, 2) if vol_ratio is not None else None,
+                    }
+                    for k, v in verified_indicators.items():
+                        if v is not None:
+                            key_indicators[k] = round(v, 2)
+                            
+                    return {
+                        'ticker': ticker,
+                        'score': round(final_score, 2),
+                        'current_price': round(price_val, 2),
+                        'conditions_passed': conditions_passed,
+                        'total_conditions': len(strategy.conditions),
+                        'confidence': round((conditions_passed / len(strategy.conditions)) * 100, 1),
+                        'key_indicators': key_indicators,
+                        'patterns': [] 
+                    }
+                except Exception as e:
+                    return None
+
+            # Process in memory across parallel threads using the fetched bulk data
+            with ThreadPoolExecutor(max_workers=self.max_workers * 2) as executor:
                 future_to_ticker = {
-                    executor.submit(self._screen_stock, ticker, strategy): ticker
-                    for ticker in tickers[:self.max_tickers]
+                    executor.submit(screen_ticker_single, ticker): ticker
+                    for ticker in tickers_to_process
                 }
                 
                 for future in as_completed(future_to_ticker):
                     try:
-                        result = future.result(timeout=30)
+                        result = future.result(timeout=15)
                         if result and result['score'] > 0:
                             results.append(result)
+                    except TimeoutError:
+                        ticker_name = future_to_ticker[future]
+                        logger.error(f"Timeout while screening {ticker_name}")
                     except Exception as e:
-                        logger.debug(f"Error screening: {e}")
+                        ticker_name = future_to_ticker[future]
+                        logger.error(f"Error screening {ticker_name}: {type(e).__name__} - {e}")
             
-            # Sort by score
             results = sorted(results, key=lambda x: x['score'], reverse=True)[:max_results]
+            for r in results:
+                r['prediction_available'] = True
             
             elapsed = time.time() - start_time
             
@@ -2528,14 +2933,135 @@ class InteractiveStockScreener:
             
         except Exception as e:
             logger.error(f"Screening error: {e}")
+            return {'status': 'error', 'message': str(e)}
+
+    def run_strategy_object(self, strategy: TradingStrategy, max_results: int = 50,
+                            min_score_pct: float = 40.0,
+                            min_conditions_required: Optional[int] = None) -> Dict:
+        """Run a pre-built strategy object without registering it. Used by Custom API endpoints."""
+        try:
+            logger.info(f"Running screening for: {strategy.name}")
+            start_time = time.time()
+
+            tickers = self._get_tickers()
+            if not tickers:
+                return {'status': 'error', 'message': 'No tickers found'}
+
+            # OPTIMIZATION: Fetch ALL features in one database query
+            tickers_to_process = tickers[:self.max_tickers]
+            bulk_features = self.pipeline.get_bulk_latest_features(tickers_to_process)
+
+            results = []
+            
+            def screen_ticker_single(ticker):
+                try:
+                    indicators = bulk_features.get(ticker)
+                    if not indicators:
+                        df = self._fetch_stock_data(ticker)
+                        if df is None or df.empty: return None
+                        tech_engine = TechnicalIndicatorEngine(df)
+                        indicators = tech_engine.calculate_all_indicators().iloc[-1].to_dict()
+                    
+                    fundamentals = {}
+                    if strategy.strategy_type in ['fundamental', 'hybrid']:
+                        fundamentals = self._fetch_fundamentals_cached(ticker) or {}
+                        
+                    total_score = 0.0
+                    max_score = 0.0
+                    conditions_passed = 0
+                    
+                    verified_indicators = {}
+                    for condition in strategy.conditions:
+                        max_score += condition.weight
+                        passed, score = self._evaluate_condition(condition, indicators, fundamentals)
+                        
+                        if condition.indicator in indicators:
+                            verified_indicators[condition.indicator] = self._safe_float(indicators[condition.indicator])
+                        elif condition.indicator in fundamentals:
+                            verified_indicators[condition.indicator] = self._safe_float(fundamentals[condition.indicator])
+                            
+                        if passed:
+                            total_score += score
+                            conditions_passed += 1
+                            
+                    final_score = (total_score / max_score * 100) if max_score > 0 else 0
+                    
+                    if min_conditions_required is not None and conditions_passed < min_conditions_required:
+                        return None
+                    if final_score < min_score_pct:
+                        return None
+                        
+                    price_val = self._safe_float(indicators.get('close'))
+                    if price_val is None:
+                        return None
+                        
+                    rsi_val = self._safe_float(indicators.get('rsi_14'))
+                    price_change = self._safe_float(indicators.get('price_change_20d'))
+                    vol_ratio = self._safe_float(indicators.get('volume_ratio_20'))
+                    
+                    key_indicators = {
+                        'rsi_14': round(rsi_val, 2) if rsi_val is not None else None,
+                        'price_change_20d': round(price_change, 2) if price_change is not None else None,
+                        'volume_ratio_20': round(vol_ratio, 2) if vol_ratio is not None else None,
+                    }
+                    for k, v in verified_indicators.items():
+                        if v is not None:
+                            key_indicators[k] = round(v, 2)
+                            
+                    return {
+                        'ticker': ticker,
+                        'score': round(final_score, 2),
+                        'current_price': round(price_val, 2),
+                        'conditions_passed': conditions_passed,
+                        'total_conditions': len(strategy.conditions),
+                        'confidence': round((conditions_passed / len(strategy.conditions)) * 100, 1),
+                        'key_indicators': key_indicators,
+                        'patterns': [] 
+                    }
+                except Exception as e:
+                    return None
+
+            with ThreadPoolExecutor(max_workers=self.max_workers * 2) as executor:
+                future_to_ticker = {
+                    executor.submit(screen_ticker_single, ticker): ticker
+                    for ticker in tickers_to_process
+                }
+
+                for future in as_completed(future_to_ticker):
+                    try:
+                        result = future.result(timeout=15)
+                        if result and result.get('score', 0) > 0:
+                            results.append(result)
+                    except TimeoutError:
+                        ticker_name = future_to_ticker[future]
+                        logger.error(f"Timeout while screening {ticker_name}")
+                    except Exception as e:
+                        ticker_name = future_to_ticker[future]
+                        logger.error(f"Error screening {ticker_name}: {type(e).__name__} - {e}")
+
+            results = sorted(results, key=lambda x: x['score'], reverse=True)[:max_results]
+            for r in results:
+                r['prediction_available'] = True
+                
+            elapsed = time.time() - start_time
+
             return {
-                'status': 'error',
-                'message': str(e)
+                'status': 'success',
+                'strategy_name': strategy.name,
+                'count': len(results),
+                'execution_time': round(elapsed, 2),
+                'results': results,
+                'timestamp': datetime.now().isoformat()
             }
+
+        except Exception as e:
+            logger.error(f"Screening error: {e}")
+            return {'status': 'error', 'message': str(e)}
 
     def run_screening_multi(self, strategy_names: List[str], max_results: int = 50,
                             max_tickers: Optional[int] = None,
-                            time_budget_seconds: Optional[float] = None) -> Dict[str, Any]:
+                            time_budget_seconds: Optional[float] = None,
+                            progress_callback = None) -> Dict[str, Any]:
         """
         Run multiple strategies efficiently by sharing data.
         Returns a dictionary with results for each strategy.
@@ -2554,6 +3080,9 @@ class InteractiveStockScreener:
 
             def _time_budget_exceeded() -> bool:
                 return deadline is not None and time.time() >= deadline
+            
+            if progress_callback:
+                progress_callback({'phase': 'loading', 'message': 'Loading strategies and tickers...'})
             
             strategies = []
             for name in strategy_names:
@@ -2576,15 +3105,17 @@ class InteractiveStockScreener:
                 except (TypeError, ValueError):
                     requested_ticker_limit = self.max_tickers
 
-            ticker_limit = min(self.max_tickers, requested_ticker_limit)
-            needs_fundamentals = any(s.strategy_type in ['fundamental', 'hybrid'] for s in strategies)
-            # Fundamental lookups are network-bound; cap universe to keep API responses interactive.
-            if needs_fundamentals:
-                ticker_limit = min(ticker_limit, 900)
-
+            ticker_limit = min(len(tickers), requested_ticker_limit)
+            
             tickers_to_process = tickers[:ticker_limit]
             if not tickers_to_process:
                 return {'status': 'error', 'message': 'No eligible tickers found'}
+            
+            # 1. Bulk Load Data
+            if progress_callback:
+                progress_callback({'phase': 'loading', 'message': f'Bulk loading indicators for {len(tickers_to_process)} tickers...'})
+                
+            bulk_features = self.pipeline.get_bulk_latest_features(tickers_to_process)
             
             # Initialize results containers
             strategy_results = {s.name: [] for s in strategies}
@@ -2599,29 +3130,22 @@ class InteractiveStockScreener:
                     if stop_event.is_set() or _time_budget_exceeded():
                         return None
 
-                    # 1. Fetch Data & Calculate Indicators ONCE
-                    df = self._fetch_stock_data(ticker)
-                    if df is None: return None
-                    if stop_event.is_set() or _time_budget_exceeded():
-                        return None
+                    # Use pre-computed indicators from DB if available
+                    indicators = bulk_features.get(ticker)
                     
-                    tech_engine = TechnicalIndicatorEngine(df)
-                    df_indicators = tech_engine.calculate_all_indicators()
-                    latest = df_indicators.iloc[-1]
-                    indicators = latest.to_dict()
-                    
-                    pattern_engine = PatternRecognitionEngine(df_indicators)
-                    patterns = pattern_engine.detect_all_patterns()
-                    if stop_event.is_set() or _time_budget_exceeded():
-                        return None
-                    
-                    # Fundamentals - fetch once per ticker and share across all strategy evaluations.
-                    fundamentals = {}
-                    if needs_fundamentals:
-                        if stop_event.is_set() or _time_budget_exceeded():
-                            return None
-                        fundamentals = self._fetch_fundamentals_cached(ticker)
+                    if not indicators:
+                        # Fallback: calculate on the fly for this ticker
+                        df = self._fetch_stock_data(ticker)
+                        if df is None or df.empty: return None
+                        if stop_event.is_set() or _time_budget_exceeded(): return None
+                        
+                        tech_engine = TechnicalIndicatorEngine(df)
+                        df_indicators = tech_engine.calculate_all_indicators()
+                        indicators = df_indicators.iloc[-1].to_dict()
 
+                    if stop_event.is_set() or _time_budget_exceeded(): return None
+                    
+                    fundamentals = None
                     ticker_results = {}
                     
                     # 2. Evaluate ALL strategies
@@ -2632,9 +3156,24 @@ class InteractiveStockScreener:
                         max_score = 0.0
                         conditions_passed = 0
                         
+                        strategy_fundamentals = {}
+                        if strategy.strategy_type in ['fundamental', 'hybrid']:
+                            if stop_event.is_set() or _time_budget_exceeded():
+                                return None
+                            if fundamentals is None:
+                                fundamentals = self._fetch_fundamentals_cached(ticker)
+                            strategy_fundamentals = fundamentals or {}
+
+                        verified_indicators = {}
                         for condition in strategy.conditions:
                             max_score += condition.weight
-                            passed, score = self._evaluate_condition(condition, indicators, fundamentals)
+                            passed, score = self._evaluate_condition(condition, indicators, strategy_fundamentals)
+                            
+                            if condition.indicator in indicators:
+                                verified_indicators[condition.indicator] = self._safe_float(indicators[condition.indicator])
+                            elif condition.indicator in strategy_fundamentals:
+                                verified_indicators[condition.indicator] = self._safe_float(strategy_fundamentals[condition.indicator])
+                                
                             if passed:
                                 total_score += score
                                 conditions_passed += 1
@@ -2642,28 +3181,37 @@ class InteractiveStockScreener:
                         final_score = (total_score / max_score * 100) if max_score > 0 else 0
                         
                         if final_score >= 40: # Filter
+                            price_val = self._safe_float(indicators.get('close'))
+                            rsi_val = self._safe_float(indicators.get('rsi_14'))
+                            price_change = self._safe_float(indicators.get('price_change_20d'))
+                            vol_ratio = self._safe_float(indicators.get('volume_ratio_20'))
+                            
+                            key_indicators = {
+                                'rsi_14': round(rsi_val, 2) if rsi_val is not None else None,
+                                'price_change_20d': round(price_change, 2) if price_change is not None else None,
+                                'volume_ratio_20': round(vol_ratio, 2) if vol_ratio is not None else None,
+                            }
+                            
+                            for k, v in verified_indicators.items():
+                                if v is not None:
+                                    key_indicators[k] = round(v, 2)
+                                    
                             ticker_results[strategy.name] = {
                                 'ticker': ticker,
                                 'score': round(final_score, 2),
-                                'current_price': round(float(latest['close']), 2),
+                                'current_price': round(price_val, 2) if price_val is not None else None,
                                 'conditions_passed': conditions_passed,
                                 'total_conditions': len(strategy.conditions),
                                 'confidence': round((conditions_passed / len(strategy.conditions)) * 100, 1),
-                                'key_indicators': {
-                                    'rsi_14': round(float(indicators.get('rsi_14', 0)), 2),
-                                    'price_change_20d': round(float(indicators.get('price_change_20d', 0)), 2),
-                                    'volume_ratio_20': round(float(indicators.get('volume_ratio_20', 0)), 2),
-                                },
-                                'patterns': [k for k, v in patterns.items() if v]
+                                'key_indicators': key_indicators,
+                                'patterns': [] 
                             }
                     return ticker_results
 
                 except Exception as e:
-                    # logger.debug(f"Error screening {ticker}: {e}")
                     return None
 
-            # Parallel execution with cooperative time-budget enforcement.
-            executor = ThreadPoolExecutor(max_workers=self.max_workers)
+            executor = ThreadPoolExecutor(max_workers=self.max_workers * 2) 
             pending = {}
             ticker_iter = iter(tickers_to_process)
 
@@ -2682,10 +3230,11 @@ class InteractiveStockScreener:
                 return True
 
             try:
-                for _ in range(max(1, self.max_workers)):
+                for _ in range(max(1, self.max_workers * 2)):
                     if not _submit_next():
                         break
-
+                
+                last_progress_time = time.time()
                 while pending:
                     if _time_budget_exceeded():
                         timed_out = True
@@ -2706,6 +3255,15 @@ class InteractiveStockScreener:
                         timeout=wait_timeout,
                         return_when=FIRST_COMPLETED,
                     )
+                    
+                    if progress_callback and (time.time() - last_progress_time > 0.5 or not pending):
+                        progress_callback({
+                            'phase': 'evaluating',
+                            'processed': processed_tickers,
+                            'total': len(tickers_to_process),
+                            'elapsed': time.time() - start_time
+                        })
+                        last_progress_time = time.time()
 
                     if not done:
                         continue
@@ -2728,10 +3286,40 @@ class InteractiveStockScreener:
                         future.cancel()
                 executor.shutdown(wait=False, cancel_futures=True)
             
-            # Sort and limit
+            if progress_callback:
+                progress_callback({'phase': 'ranking', 'message': 'Ranking overlapping results...'})
+                
             final_output = {}
             for s_name, res_list in strategy_results.items():
                 final_output[s_name] = sorted(res_list, key=lambda x: x['score'], reverse=True)[:max_results]
+                
+            merged_dict = {}
+            for s_name, res_list in final_output.items():
+                for res in res_list:
+                    ticker = res['ticker']
+                    if ticker not in merged_dict:
+                        merged_dict[ticker] = {
+                            'ticker': ticker,
+                            'current_price': res['current_price'],
+                            'strategies_satisfied': [],
+                            'strategy_scores': {},
+                            'verified_indicators': {},
+                            'overall_score': 0.0
+                        }
+                    merged_dict[ticker]['strategies_satisfied'].append(s_name)
+                    merged_dict[ticker]['strategy_scores'][s_name] = res['score']
+                    merged_dict[ticker]['verified_indicators'].update(res['key_indicators'])
+                    
+            merged_results = []
+            for ticker, data in merged_dict.items():
+                scores = list(data['strategy_scores'].values())
+                data['overall_score'] = round(sum(scores) / len(scores), 2)
+                data['prediction_available'] = True  
+                merged_results.append(data)
+                
+            merged_results.sort(key=lambda x: (len(x['strategies_satisfied']), x['overall_score']), reverse=True)
+            
+            final_output['merged_results'] = merged_results[:max_results * 2]
                 
             elapsed = time.time() - start_time
             if timed_out:
@@ -2853,13 +3441,21 @@ class InteractiveStockScreener:
     # ==================== INTERNAL METHODS ====================
     
     def _get_tickers(self) -> List[str]:
-        """Get all available tickers from database"""
+        """Get all available tickers from database, filtering out delisted/rights"""
         try:
             raw_data = self.pipeline.get_latest_data(limit=None)
             df = pd.DataFrame(raw_data)
             
             if df.empty:
                 return []
+
+            df = df[df['ticker'].notna()]
+            df['ticker'] = df['ticker'].astype(str).str.strip()
+            df = df[df['ticker'] != '']
+            
+            # CRITICAL FIX: Filter out Rights Entitlements (-RE) which cause Yahoo Finance 404/hangs
+            df = df[~df['ticker'].str.contains(r'-RE\d*$', regex=True, na=False)]
+            df = df[~df['ticker'].str.contains(r'-RE\.NS$', regex=True, na=False)]
             
             df['close'] = pd.to_numeric(df['close'], errors='coerce')
             df['volume'] = pd.to_numeric(df['volume'], errors='coerce').fillna(0)
@@ -2869,7 +3465,6 @@ class InteractiveStockScreener:
             if df.empty:
                 return []
 
-            # Process liquid tickers first so bounded scans still return actionable names.
             df = df.sort_values('volume', ascending=False)
             df = df.drop_duplicates(subset=['ticker'])
 
@@ -2879,36 +3474,50 @@ class InteractiveStockScreener:
             return []
 
     def _fetch_fundamentals_cached(self, ticker: str) -> Dict[str, Any]:
-        """Fetch fundamentals with screener-level cache to avoid repeated network calls."""
+        """Fetch fundamentals with screener-level cache and negative caching."""
         cache_key = f"fund_{ticker}"
 
         cached = self.cache.get(cache_key)
         if cached is not None:
+            # If we cached a failure state previously, abort instantly
+            if cached == "FAILED": 
+                return {}
             return cached
 
         try:
-            self.rate_limiter.wait()
             fund_engine = FundamentalAnalysisEngine(ticker)
             fundamentals = fund_engine.fetch_fundamentals() or {}
+            
+            # Cache the failure to prevent retrying 404/delisted stocks on every strategy
+            if not fundamentals:
+                self.cache.set(cache_key, "FAILED")
+                return {}
+                
             self.cache.set(cache_key, fundamentals)
             return fundamentals
         except Exception as e:
             logger.debug(f"Error fetching fundamentals for {ticker}: {e}")
+            self.cache.set(cache_key, "FAILED")
             return {}
     
     def _fetch_stock_data(self, ticker: str) -> Optional[pd.DataFrame]:
-        """Fetch stock data with caching"""
+        """Fetch stock data with caching and failure-state memory"""
         cache_key = f"data_{ticker}"
         
         cached = self.cache.get(cache_key)
         if cached is not None:
+            # If we cached a failure state previously, abort instantly
+            if isinstance(cached, str) and cached == "FAILED":
+                return None
             return cached
         
         try:
             raw_data = self.pipeline.get_ticker_history(ticker)
             df = pd.DataFrame(raw_data)
             
-            if df.empty or len(df) < 100:
+            if df.empty or len(df) < 50:
+                # Cache the failure so we don't hammer Yahoo Finance again
+                self.cache.set(cache_key, "FAILED") 
                 return None
             
             df = df.sort_values('date')
@@ -2919,9 +3528,12 @@ class InteractiveStockScreener:
             
         except Exception as e:
             logger.debug(f"Error fetching data for {ticker}: {e}")
+            self.cache.set(cache_key, "FAILED")
             return None
     
-    def _screen_stock(self, ticker: str, strategy: TradingStrategy) -> Optional[Dict]:
+    def _screen_stock(self, ticker: str, strategy: TradingStrategy,
+                      min_score_pct: float = 40.0,
+                      min_conditions_required: Optional[int] = None) -> Optional[Dict]:
         """Screen a single stock against strategy"""
         try:
             # Fetch data
@@ -2958,21 +3570,32 @@ class InteractiveStockScreener:
                     conditions_passed += 1
             
             final_score = (total_score / max_score * 100) if max_score > 0 else 0
-            
-            if final_score < 40:  # Filter out low scores
+
+            if min_conditions_required is not None and conditions_passed < min_conditions_required:
                 return None
-            
+
+            if final_score < min_score_pct:
+                return None
+
+            price = self._safe_float(latest.get('close'))
+            if price is None:
+                return None
+
+            rsi_val = self._safe_float(indicators.get('rsi_14'))
+            price_change = self._safe_float(indicators.get('price_change_20d'))
+            vol_ratio = self._safe_float(indicators.get('volume_ratio_20'))
+
             return {
                 'ticker': ticker,
                 'score': round(final_score, 2),
-                'current_price': round(float(latest['close']), 2),
+                'current_price': round(price, 2),
                 'conditions_passed': conditions_passed,
                 'total_conditions': len(strategy.conditions),
                 'confidence': round((conditions_passed / len(strategy.conditions)) * 100, 1),
                 'key_indicators': {
-                    'rsi_14': round(float(indicators.get('rsi_14', 0)), 2),
-                    'price_change_20d': round(float(indicators.get('price_change_20d', 0)), 2),
-                    'volume_ratio_20': round(float(indicators.get('volume_ratio_20', 0)), 2),
+                    'rsi_14': round(rsi_val, 2) if rsi_val is not None else None,
+                    'price_change_20d': round(price_change, 2) if price_change is not None else None,
+                    'volume_ratio_20': round(vol_ratio, 2) if vol_ratio is not None else None,
                 },
                 'patterns': [k for k, v in patterns.items() if v]
             }
@@ -2984,62 +3607,86 @@ class InteractiveStockScreener:
     def _evaluate_condition(self, condition: StrategyCondition,
                            indicators: Dict, fundamentals: Dict) -> Tuple[bool, float]:
         """Evaluate a single condition"""
-        
-        # Get indicator value
+
+        if isinstance(condition.value, str) and (
+            condition.value in indicators or condition.value in fundamentals
+        ):
+            lhs = indicators.get(condition.indicator)
+            if lhs is None and condition.indicator in fundamentals:
+                lhs = fundamentals.get(condition.indicator)
+            rhs = indicators.get(condition.value)
+            if rhs is None and condition.value in fundamentals:
+                rhs = fundamentals.get(condition.value)
+
+            if lhs is None or rhs is None:
+                return False, 0.0
+
+            try:
+                lhs_f = float(lhs)
+                rhs_f = float(rhs)
+                if np.isnan(lhs_f) or np.isnan(rhs_f):
+                    return False, 0.0
+            except (ValueError, TypeError):
+                return False, 0.0
+
+            if condition.operator == '>':
+                passed = lhs_f > rhs_f
+            elif condition.operator == '>=':
+                passed = lhs_f >= rhs_f
+            elif condition.operator == '<':
+                passed = lhs_f < rhs_f
+            elif condition.operator == '<=':
+                passed = lhs_f <= rhs_f
+            elif condition.operator == '==':
+                passed = lhs_f == rhs_f
+            elif condition.operator == '!=':
+                passed = lhs_f != rhs_f
+            else:
+                passed = False
+
+            return passed, condition.weight if passed else 0.0
+
         indicator_value = None
-        
         if condition.indicator in indicators:
             indicator_value = indicators[condition.indicator]
         elif condition.indicator in fundamentals:
             indicator_value = fundamentals[condition.indicator]
-        elif isinstance(condition.value, str) and condition.value in indicators:
-            # Comparing two indicators (e.g., close > sma_50)
-            indicator_value = indicators.get(condition.indicator)
-            comparison_value = indicators.get(condition.value)
-            
-            if indicator_value is None or comparison_value is None:
-                return False, 0.0
-            
-            if condition.operator == '>':
-                passed = indicator_value > comparison_value
-            elif condition.operator == '>=':
-                passed = indicator_value >= comparison_value
-            elif condition.operator == '<':
-                passed = indicator_value < comparison_value
-            elif condition.operator == '<=':
-                passed = indicator_value <= comparison_value
-            else:
-                passed = False
-            
-            return passed, condition.weight if passed else 0.0
-        
+
         if indicator_value is None:
             return False, 0.0
-        
-        # Evaluate condition
+
+        try:
+            indicator_value = float(indicator_value)
+            if np.isnan(indicator_value):
+                return False, 0.0
+        except (ValueError, TypeError):
+            return False, 0.0
+
         try:
             if condition.operator == '>':
-                passed = float(indicator_value) > float(condition.value)
+                passed = indicator_value > float(condition.value)
             elif condition.operator == '>=':
-                passed = float(indicator_value) >= float(condition.value)
+                passed = indicator_value >= float(condition.value)
             elif condition.operator == '<':
-                passed = float(indicator_value) < float(condition.value)
+                passed = indicator_value < float(condition.value)
             elif condition.operator == '<=':
-                passed = float(indicator_value) <= float(condition.value)
+                passed = indicator_value <= float(condition.value)
             elif condition.operator == '==':
-                passed = float(indicator_value) == float(condition.value)
+                passed = indicator_value == float(condition.value)
             elif condition.operator == '!=':
-                passed = float(indicator_value) != float(condition.value)
+                passed = indicator_value != float(condition.value)
             elif condition.operator == 'between':
                 if isinstance(condition.value, (list, tuple)) and len(condition.value) == 2:
-                    passed = condition.value[0] <= float(indicator_value) <= condition.value[1]
+                    lower = float(condition.value[0])
+                    upper = float(condition.value[1])
+                    passed = lower <= indicator_value <= upper
                 else:
                     passed = False
             else:
                 passed = False
-            
+
             return passed, condition.weight if passed else 0.0
-            
+
         except (ValueError, TypeError):
             return False, 0.0
 
@@ -3049,20 +3696,12 @@ class InteractiveStockScreener:
 class StockScreener:
     """
     Backwards-compatible wrapper used by `application.py`.
-
-    The newer implementation in this file is `InteractiveStockScreener`,
-    which powers the rich strategy engine and indicator catalog.
-
-    This thin adapter exposes the older method names expected by the
-    Flask backend (`piotroski_scan`, `momentum_scan`, etc.) by delegating
-    to `InteractiveStockScreener.run_screening`.
     """
 
     def __init__(self, pipeline, cache_ttl: int = 3600, max_workers: int = 10, max_tickers: int = 2500):
         self._interactive = InteractiveStockScreener(pipeline, cache_ttl=cache_ttl, max_workers=max_workers, max_tickers=max_tickers)
 
     def _run(self, strategy_name: str, max_results: int = 50):
-        """Helper to run a strategy and always return a DataFrame."""
         result = self._interactive.run_screening(strategy_name, max_results=max_results)
         if not isinstance(result, dict):
             return pd.DataFrame()
@@ -3079,12 +3718,13 @@ class StockScreener:
         if 'piotroski_score' in df.columns:
             df = df[df['piotroski_score'] >= min_score]
         return df
+    
+    def triple_macd_scan(self):
+        """Wrapper for application.py to run the 3 MACD Alignment strategy"""
+        return self._run('macd_triple_alignment', max_results=200)
 
     def momentum_scan(self, lookback_days: int = 20, min_return: float = 5.0):
-        # Strategy parameters are encoded inside the strategy definition; we
-        # simply run the named strategy and optionally filter by min_return.
         df = self._run('momentum', max_results=200)
-        # Try to respect caller's min_return if the column exists
         for col in ['price_change_20d', 'expected_return_pct', 'momentum_return']:
             if col in df.columns:
                 df = df[df[col] >= min_return]
@@ -3099,7 +3739,6 @@ class StockScreener:
 
     def breakout_scan(self, volume_threshold: float = 1.5):
         df = self._run('breakout', max_results=200)
-        # Best-effort volume filter if we have a suitable column
         for col in ['volume_ratio', 'volume_score']:
             if col in df.columns:
                 df = df[df[col] >= volume_threshold]
@@ -3107,29 +3746,106 @@ class StockScreener:
         return df
 
     def custom_scan(self, conditions: dict):
-        """
-        Basic custom scan for the legacy `/api/screen/custom` endpoint.
+        try:
+            parsed_conditions: List[StrategyCondition] = []
 
-        To keep behaviour predictable across environments, this implementation
-        returns an empty DataFrame when no dedicated custom strategy is
-        configured in the advanced engine. The React UI handles the "no
-        results" case gracefully.
-        """
-        return pd.DataFrame()
+            if isinstance(conditions, list):
+                for cond in conditions:
+                    if not isinstance(cond, dict):
+                        continue
+                    parsed_conditions.append(StrategyCondition(
+                        indicator=cond.get('indicator', ''),
+                        operator=cond.get('operator', '>'),
+                        value=cond.get('value', 0),
+                        weight=float(cond.get('weight', 1.0))
+                    ))
+            elif isinstance(conditions, dict):
+                price = conditions.get('price') or {}
+                if isinstance(price, dict):
+                    min_val = price.get('min')
+                    max_val = price.get('max')
+                    if min_val is not None and max_val is not None:
+                        parsed_conditions.append(StrategyCondition('close', 'between', (min_val, max_val), 1.0))
+                    elif min_val is not None:
+                        parsed_conditions.append(StrategyCondition('close', '>=', min_val, 1.0))
+                    elif max_val is not None:
+                        parsed_conditions.append(StrategyCondition('close', '<=', max_val, 1.0))
+
+                rsi = conditions.get('rsi') or {}
+                if isinstance(rsi, dict):
+                    min_val = rsi.get('min')
+                    max_val = rsi.get('max')
+                    if min_val is not None and max_val is not None:
+                        parsed_conditions.append(StrategyCondition('rsi_14', 'between', (min_val, max_val), 1.0))
+                    elif min_val is not None:
+                        parsed_conditions.append(StrategyCondition('rsi_14', '>=', min_val, 1.0))
+                    elif max_val is not None:
+                        parsed_conditions.append(StrategyCondition('rsi_14', '<=', max_val, 1.0))
+
+                volume_ratio = conditions.get('volume_ratio') or {}
+                if isinstance(volume_ratio, dict):
+                    min_val = volume_ratio.get('min')
+                    if min_val is not None:
+                        parsed_conditions.append(StrategyCondition('volume_ratio_20', '>=', min_val, 1.0))
+            else:
+                return pd.DataFrame()
+
+            if not parsed_conditions:
+                return pd.DataFrame()
+
+            temp_strategy = TradingStrategy(
+                name='custom',
+                description='Custom ad-hoc scan',
+                strategy_type='technical',
+                conditions=parsed_conditions,
+                metadata={'source': 'legacy_custom'}
+            )
+
+            result = self._interactive.run_strategy_object(
+                temp_strategy,
+                max_results=200,
+                min_score_pct=0.0,
+                min_conditions_required=len(parsed_conditions),
+            )
+
+            if result.get('status') != 'success':
+                return pd.DataFrame()
+
+            rows = result.get('results') or []
+            return pd.DataFrame(rows)
+        except Exception as e:
+            logger.debug(f"Custom scan failed: {e}")
+            return pd.DataFrame()
+
+    def get_latest_screening_data(self) -> pd.DataFrame:
+        try:
+            tickers = self._interactive._get_tickers()
+            if not tickers:
+                return pd.DataFrame()
+
+            raw = self._interactive.pipeline.get_latest_data(limit=None)
+            if not raw:
+                return pd.DataFrame()
+
+            df = pd.DataFrame(raw)
+            if df.empty:
+                return df
+
+            df.columns = [c.lower() for c in df.columns]
+            if 'ticker' in df.columns:
+                df = df[df['ticker'].isin(tickers)]
+            return df
+        except Exception as e:
+            logger.debug(f"Error loading latest screening data: {e}")
+            return pd.DataFrame()
     
     def execute_custom_strategy(self, conditions: list):
-        """
-        Execute a custom strategy based on a list of conditions.
-        Each condition should have: indicator, operator, value, weight
-        """
         try:
-            # Get latest stock data
             df = self.get_latest_screening_data()
             
             if df.empty:
                 return pd.DataFrame()
             
-            # Track scores for each stock
             scores = {}
             
             for ticker in df['ticker'].unique():
@@ -3144,11 +3860,12 @@ class StockScreener:
                         value = condition.get('value')
                         weight = float(condition.get('weight', 1.0))
                         
-                        # Get the indicator value from stock data
-                        indicator_value = float(stock_data.get(indicator, 0))
+                        raw_indicator_value = stock_data.get(indicator, 0)
+                        indicator_value = float(raw_indicator_value)
+                        if np.isnan(indicator_value):
+                            continue
                         condition_value = float(value) if value else 0
                         
-                        # Evaluate condition
                         result = False
                         if operator == '>':
                             result = indicator_value > condition_value
@@ -3161,8 +3878,13 @@ class StockScreener:
                         elif operator == '==':
                             result = indicator_value == condition_value
                         elif operator == 'between':
-                            lower = condition.get('lower', 0)
-                            upper = condition.get('upper', 100)
+                            value_range = condition.get('value')
+                            if isinstance(value_range, (list, tuple)) and len(value_range) == 2:
+                                lower = float(value_range[0])
+                                upper = float(value_range[1])
+                            else:
+                                lower = float(condition.get('lower', 0))
+                                upper = float(condition.get('upper', 100))
                             result = lower <= indicator_value <= upper
                         
                         if result:
@@ -3182,14 +3904,12 @@ class StockScreener:
             if not scores:
                 return pd.DataFrame()
             
-            # Filter stocks that meet at least half the conditions
             min_conditions = max(1, len(conditions) // 2)
             qualified_tickers = [t for t, s in scores.items() if s['conditions_met'] >= min_conditions]
             
             if not qualified_tickers:
                 return pd.DataFrame()
             
-            # Return filtered results sorted by score
             results = df[df['ticker'].isin(qualified_tickers)].copy()
             results['custom_score'] = results['ticker'].map(lambda t: scores.get(t, {}).get('score', 0))
             results = results.sort_values('custom_score', ascending=False)
@@ -3203,14 +3923,12 @@ class StockScreener:
             return pd.DataFrame()
     
     def run_strategy(self, strategy_name: str, max_results: int = 50):
-        """
-        Generic method to run any strategy by name.
-        """
         return self._run(strategy_name, max_results=max_results)
 
     def run_multiple_strategies(self, strategy_names: List[str], max_results: int = 50,
                                 max_tickers: Optional[int] = None,
-                                time_budget_seconds: Optional[float] = None) -> Dict[str, Any]:
+                                time_budget_seconds: Optional[float] = None,
+                                progress_callback=None) -> Dict[str, Any]:
         """
         Run multiple strategies efficiently.
         """
@@ -3219,10 +3937,9 @@ class StockScreener:
             max_results=max_results,
             max_tickers=max_tickers,
             time_budget_seconds=time_budget_seconds,
+            progress_callback=progress_callback
         )
     
-
-
 
 # ==================== EXAMPLE USAGE ====================
 
@@ -3240,122 +3957,61 @@ def interactive_demo():
     pipeline = NSEDataPipeline(DB_URL)
     screener = InteractiveStockScreener(pipeline)
     
-    # 1. Get indicator catalog (for frontend UI)
-    print("\n[1] GETTING INDICATOR CATALOG")
-    print("-" * 80)
-    catalog = screener.get_indicator_catalog()
-    print(f"Technical Indicator Categories: {len(catalog['technical_indicators'])}")
-    print(f"Fundamental Indicator Categories: {len(catalog['fundamental_indicators'])}")
-    print(f"Candlestick Patterns: {len(catalog['candlestick_patterns'])}")
-    print(f"Available Operators: {len(catalog['operators'])}")
-    
-    # Show sample technical indicators
-    print("\nSample Technical Indicators:")
-    for category, indicators in list(catalog['technical_indicators'].items())[:2]:
-        print(f"\n  {category}:")
-        for ind in indicators[:3]:
-            print(f"    - {ind['name']}: {ind['description']}")
-    
-    # 2. Get predefined strategies
-    print("\n[2] GETTING PREDEFINED STRATEGIES")
+    print("\n[1] GETTING PREDEFINED STRATEGIES")
     print("-" * 80)
     strategies = screener.get_predefined_strategies()
-    print(f"Total Strategies: {len(strategies['strategies'])}")
-    print(f"Categories: {', '.join(strategies['categories'])}")
+    print(f"Total Strategies Available to React: {len(strategies['strategies'])}")
     
-    # Show sample strategies
-    print("\nSample Strategies:")
-    for name, strategy in list(strategies['strategies'].items())[:3]:
-        print(f"\n  {strategy['name'].upper()}")
-        print(f"    Category: {strategy['category']}")
-        print(f"    Risk: {strategy['risk_level']}")
-        print(f"    Description: {strategy['description']}")
-        print(f"    Conditions: {len(strategy['conditions'])}")
+    macd_strategy = strategies['strategies'].get('macd_triple_alignment')
+    if macd_strategy:
+        print(f"\n  ✓ Found Strategy: {macd_strategy['name'].upper()}")
+        print(f"    Description: {macd_strategy['description']}")
+        print(f"    Conditions: {len(macd_strategy['conditions'])}")
     
-    # 3. Create custom strategy
-    print("\n[3] CREATING CUSTOM STRATEGY")
+    print("\n[2] RUNNING SCREENING - 3 MACD Alignment Strategy (Bulk Optimized)")
     print("-" * 80)
     
-    custom_strategy_data = {
-        'name': 'demo_custom_strategy',
-        'description': 'Demo strategy combining momentum and value',
-        'strategy_type': 'hybrid',
-        'conditions': [
-            {'indicator': 'rsi_14', 'operator': 'between', 'value': [40, 60], 'weight': 1.5},
-            {'indicator': 'roe', 'operator': '>', 'value': 0.15, 'weight': 2.0},
-            {'indicator': 'trailing_pe', 'operator': '<', 'value': 20, 'weight': 1.0},
-        ],
-        'metadata': {
-            'category': 'Custom',
-            'risk_level': 'Medium',
-            'holding_period': '3-6 months'
-        }
-    }
+    # Run the Triple MACD strategy through the high-performance multi-screener
+    multi_result = screener.run_screening_multi(['macd_triple_alignment'], max_results=10)
     
-    # Validate first
-    validation = screener.validate_strategy(custom_strategy_data)
-    print(f"Validation Result: {'✓ VALID' if validation['valid'] else '✗ INVALID'}")
-    if validation['errors']:
-        print(f"Errors: {validation['errors']}")
-    
-    if validation['valid']:
-        result = screener.create_custom_strategy(custom_strategy_data)
-        print(f"Status: {result['status']}")
-        print(f"Message: {result['message']}")
-    
-    # 4. Run screening
-    print("\n[4] RUNNING SCREENING - Momentum Strategy")
-    print("-" * 80)
-    
-    screening_result = screener.run_screening('momentum', max_results=10)
-    
-    if screening_result['status'] == 'success':
-        print(f"Found: {screening_result['count']} stocks")
-        print(f"Execution Time: {screening_result['execution_time']}s")
+    macd_results = []
+    if multi_result.get('status') == 'success':
+        macd_results = multi_result['results'].get('macd_triple_alignment', [])
+        print(f"Found: {len(macd_results)} stocks")
+        print(f"Execution Time: {multi_result['execution_time']}s")
         
-        if screening_result['results']:
-            print("\nTop 5 Results:")
-            for i, stock in enumerate(screening_result['results'][:5], 1):
+        if macd_results:
+            print("\nTop 5 Results (Triple MACD Confirmed):")
+            for i, stock in enumerate(macd_results[:5], 1):
                 print(f"\n  {i}. {stock['ticker']}")
                 print(f"     Score: {stock['score']}/100")
                 print(f"     Price: ₹{stock['current_price']}")
                 print(f"     Confidence: {stock['confidence']}%")
-                print(f"     RSI: {stock['key_indicators']['rsi_14']}")
-                print(f"     20D Change: {stock['key_indicators']['price_change_20d']}%")
+                # Display the specific indicators used for this strategy
+                print(f"     Daily MACD: {stock['key_indicators'].get('macd_daily', 'N/A')}")
+                print(f"     Weekly MACD: {stock['key_indicators'].get('macd_weekly', 'N/A')}")
+                print(f"     Monthly MACD: {stock['key_indicators'].get('macd_monthly', 'N/A')}")
+    else:
+        print(f"\n❌ Screening Failed: {multi_result.get('message', 'Unknown error')}")
     
-    # 5. Get stock analysis
-    if screening_result['status'] == 'success' and screening_result['results']:
-        top_ticker = screening_result['results'][0]['ticker']
+    if multi_result.get('status') == 'success' and macd_results:
+        top_ticker = macd_results[0]['ticker']
         
-        print(f"\n[5] DETAILED ANALYSIS - {top_ticker}")
+        print(f"\n[3] DETAILED ANALYSIS - {top_ticker}")
         print("-" * 80)
         
         analysis = screener.get_stock_analysis(top_ticker)
         
         if analysis['status'] == 'success':
             print(f"Current Price: ₹{analysis['current_price']}")
-            print(f"\nKey Technical Indicators:")
-            print(f"  RSI 14: {analysis['indicators'].get('rsi_14', 'N/A')}")
-            print(f"  MACD Hist: {analysis['indicators'].get('macd_hist', 'N/A')}")
-            print(f"  ADX 14: {analysis['indicators'].get('adx_14', 'N/A')}")
+            print(f"\nTriple MACD Alignment Verification:")
+            print(f"  Daily MACD: {analysis['indicators'].get('macd_daily', 'N/A')} (Increasing: {analysis['indicators'].get('macd_daily_increasing', 0)})")
+            print(f"  Weekly MACD: {analysis['indicators'].get('macd_weekly', 'N/A')} (Increasing: {analysis['indicators'].get('macd_weekly_increasing', 0)})")
+            print(f"  Monthly MACD: {analysis['indicators'].get('macd_monthly', 'N/A')} (Increasing: {analysis['indicators'].get('macd_monthly_increasing', 0)})")
             
-            if analysis['patterns']:
-                print(f"\nDetected Patterns:")
-                for pattern, detected in analysis['patterns'].items():
-                    if detected:
-                        print(f"  ✓ {pattern}")
-            
-            if analysis['fundamentals']:
-                print(f"\nFundamentals:")
-                print(f"  P/E Ratio: {analysis['fundamentals'].get('trailing_pe', 'N/A')}")
-                print(f"  ROE: {analysis['fundamentals'].get('roe', 'N/A')}")
-                print(f"  Debt/Equity: {analysis['fundamentals'].get('debt_to_equity', 'N/A')}")
-    
     print("\n" + "="*80)
     print("DEMONSTRATION COMPLETE")
-    print("All methods return JSON-serializable data ready for React frontend")
     print("="*80 + "\n")
-
 
 if __name__ == "__main__":
     interactive_demo()

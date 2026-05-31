@@ -671,28 +671,28 @@ DB_URL = os.getenv("DATABASE_URL", "postgresql://postgres:Taran%4017@localhost:5
 
 # Model hyperparameters
 CONFIG: Dict[str, Any] = {
-    'seq_len': 40,
+    'seq_len': 60,
     'pred_days': 5,
-    'hidden_dim': 64,            # v7: ↓↓ from 128 — ~92K params (was 659K)
-    'num_lstm_layers': 2,        # v7: ↓ from 3 — less depth = less memorization
-    'num_attention_heads': 2,    # v7: ↓ from 4 — fewer attention parameters
-    'dropout': 0.45,             # v33: ↓ from 0.55 — lower dropout allows model to learn bullish patterns.
-                                 #   R-Drop 1.5 + feature_dropout 0.20 + mixup 0.30 compensate.
+    'hidden_dim': 192,           # v7: ↑ from 64 — Increased capacity
+    'num_lstm_layers': 3,        # v7: ↓ from 3 — less depth = less memorization
+    'num_attention_heads': 4,    # v7: ↓ from 4 — fewer attention parameters
+    'dropout': 0.35,             # v19: ↓ from 0.45 — lower dropout allows model to learn bullish patterns.
+                                 #   R-Drop 1.5 + feature_dropout 0.15 + mixup 0.30 compensate.
                                  #   0.55 was fighting against R-Drop (consistency reg requires capacity).
     'attention_dropout': 0.15,   # v19: separate lower dropout for attention (was sharing main dropout)
-    'batch_size': 256,          # v34: RTX 4050 optimization — reduced from 512 (manages 6.4GB VRAM)
+    'batch_size': 512,          # v34: Optimized for better GPU utilization
                                 # With grad_accum_steps=4, effective batch = 256 × 4 = 1024
                                 # Tested: 512 caused OOM on RTX 4050; 256 trains comfortably at 5.2-5.8GB peak
-    'learning_rate': 2.5e-4,     # v33: ↓ from 3e-4 — slightly lower LR for smoother convergence.
+    'learning_rate': 1.5e-4,     # v19: ↓ from 3e-4 — smoother convergence.
                                  #   Prevents sharp weight oscillations in final epochs that widen gen gap.
-    'epochs': 30,                # v33: ↓ from 35 — model best at E26, epochs 27-31 only added overfitting.
+    'epochs': 50,                # v33: ↓ from 35 — model best at E26, epochs 27-31 only added overfitting.
                                  #   Cap at 30 to prevent val-set memorization in late epochs.
-    'patience': 4,               # v33: ↓ from 5 — tighter patience stops 1 epoch earlier.
+    'patience': 10,               # v33: ↑ from 4 — increased patience to allow crossing plateaus.
                                  #   v32 best at E26, stopped at E31 — 5 wasted epochs = 5pp extra gap.
-    'min_delta': 0.05,           # v41: allow meaningful but smaller quality gains to be captured.
+    'min_delta': 0.02,           # v41: allow meaningful but smaller quality gains to be captured.
                                  #   0.20 skipped genuine direction-quality improvements late in training.
-    'min_delta_direction': 0.05, # Separate gate for maximizing metrics (accuracy/F1/quality).
-    'early_stop_metric': 'direction_quality',   # v40: Accuracy-only selection skewed bearish; use quality composite.
+    'min_delta_direction': 0.10, # Separate gate for maximizing metrics (accuracy/F1/quality).
+    'early_stop_metric': 'direction_balanced_accuracy',   # v40: Accuracy-only selection skewed bearish; use quality composite.
     'direction_quality_weights': {
         'accuracy': 0.45,
         'f1_score': 0.35,
@@ -701,31 +701,31 @@ CONFIG: Dict[str, Any] = {
     'direction_quality_min_recall': 45.0,       # v40: penalize low bullish recall to avoid one-sided signal quality.
     'num_workers': 0,            # 0 for Windows; set 4 on Linux
     'pin_memory': True,          # Async CPU→GPU transfer
-    'min_data_points': 100,
+    'min_data_points': 504,
     'monte_carlo_samples': 30,
     'atr_sl_multiplier': 2.0,
     'atr_tp_multiplier': 3.0,
     'cache_features': True,
-    'grad_accum_steps': 4,       # Effective batch = 512 × 4 = 2048
-    'warmup_epochs': 2,          # v20: ↓ from 3 — 2 warmup epochs is sufficient for shorter training
-    'weight_decay': 0.08,        # v32: ↑ from 0.06 — stronger L2 to reduce weight magnitudes.
-                                 #   Works with lower dropout (0.45) to fight overfitting differently.
+    'max_predict_cache_age_hours': 24, # Prediction cache refresh
+    'grad_accum_steps': 1,       # Reduced gradient accumulation to speed up batches
+    'warmup_epochs': 8,          # v19: ↑ from 3 — longer warmup
+    'weight_decay': 0.07,        # v32: ↓ from 0.08 — weaker L2 to increase capacity.
+                                 #   Works with lower dropout (0.35) to fight overfitting differently.
     'ema_decay': 0.998,           # v7: ↓ from 0.999 — tighter EMA for shorter training
     'input_noise_std': 0.03,     # v32: ↑ from 0.025 — more input noise to prevent feature memorization.
-                                 #   Combined with dropout 0.45 + rdrop 1.5, targets raw gap < 5%.
-    'feature_dropout': 0.20,     # v33: ↑ from 0.12 — restored to meaningful level.
-                                 #   12% only masked ~11/94 features (barely noticeable).
+                                 #   Combined with dropout 0.35 + rdrop 1.5, targets raw gap < 5%.
+    'feature_dropout': 0.15,     # v19: ↓ from 0.20 — restored to meaningful level.
+                                 #   15% only masks ~14/94 features (barely noticeable).
                                  #   20% masks ~19 features per sample — forces robust feature combos.
     'purge_gap': True,           # v8: embargo gap between train/val/test
-    'purge_gap_size': 150,       # v33: ↑ from 120 — wider embargo for 50-day lookback indicators.
-                                 #   SMA_50 + seq_len=40 + pred_days=5 = 95 samples minimum.
-                                 #   150 provides safe 55-sample buffer above theoretical minimum.
+    'purge_gap_size': 15,        # Calendar-day embargo for split boundaries.
+    'purge_gap_calendar_days': 15,
     'beta_neutral': True,        # v10: predict excess return over Nifty 50 (alpha, not beta)
     'mixup_alpha': 0.30,         # v33: ↑ from 0.20 — stronger mixup creates more synthetic bull/bear
                                  #   blends, directly addressing BUY precision weakness.
                                  #   Higher alpha = more diverse interpolated samples near decision boundary.
-    'swa_start_epoch': 10,       # v33: ↓ from 12 — start earlier with fewer total epochs (30).
-                                 #   SWA needs minimum 5 param snapshots → start by epoch 10 for 20 snapshots.
+    'swa_start_epoch': 5,       # v33: ↓ from 10 — start earlier for more models averaged.
+                                 #   SWA needs minimum 5 param snapshots → start by epoch 5 for 20 snapshots.
     'swa_lr': 1e-4,              # v13: SWA learning rate (flat after SWA starts)
     # v33: Balanced thresholds — BUY at P>0.70 gives 2,634 signals (good statistical power)
     # while maintaining positive expected return. P>0.80 was too restrictive (only ~500 signals).
@@ -742,13 +742,15 @@ CONFIG: Dict[str, Any] = {
     'regression_r2_threshold': 0.0,    # v14: Use ML regression only if R² > this, else rule-based
     'use_rule_based_targets': True,    # v14: ATR-based stops/targets (regression R² is negative)
     # v19: Simplified regularization — fewer techniques, each more effective
-    'temporal_cutout_prob': 0.10,      # v19: ↓ from 0.20 — lighter temporal masking
+    'temporal_cutout_prob': 0.10,      # v19: ↓ from 0.15 — lighter temporal masking
     'backtest_holding_period': True,   # v15: Enforce pred_days gap between backtest trades
-    'backtest_max_trades': 5000,       # v19: ↑ from 2000 — more trades for backtest statistics
-    'label_smoothing': 0.05,           # v19: ↓ from 0.08 — less smoothing preserves sharper boundaries
+    'backtest_max_trades': 5000,       # Keep large enough for statistical power; paper backtest added alongside CWCB.
+    'label_smoothing': 0.04,           # Crisper labels reduce over-smoothing near the decision boundary.
     # v33: R-Drop REDUCED — 3.0 was fighting against learning capacity.
-    # At dropout=0.45, R-Drop 1.5 provides consistency without over-constraining.
-    'rdrop_alpha': 1.5,                # v33: ↓ from 3.0 — key change to fix BUY precision.
+    # At dropout=0.35, R-Drop 1.5 provides consistency without over-constraining.
+    'rdrop_alpha': 0.5,                # Lower consistency pressure; preserves capacity for directional learning.
+    'rdrop_warmup_start_epoch': 8,
+    'rdrop_warmup_ramp_epochs': 4,
                                        #   R-Drop 3.0 + dropout 0.55 spent too much capacity on consistency
                                        #   rather than learning bullish patterns. 1.5 is the sweet spot:
                                        #   still forces dropout-mask agreement but leaves capacity for learning.
@@ -756,10 +758,10 @@ CONFIG: Dict[str, Any] = {
     'adversarial_alpha': 0.0,          # v19: DISABLED
     # v17: Generalization Gap Monitor & Split Calibration
     'max_acceptable_gap': 7.0,         # v33: ↓ from 8.0 — tighter monitoring with improved generalization
-    'calibration_split': 0.30,         # v17: Reserve 30% of val set for temperature calibration
+    'calibration_split': 0.40,         # v17: Reserve 30% of val set for temperature calibration
     'use_calibration_holdout_dir_threshold': True,  # Tune direction decision threshold on held-out calibration split.
-    'dir_threshold_search_min': 0.46,  # Conservative bounded search to avoid unstable threshold drift.
-    'dir_threshold_search_max': 0.54,
+    'dir_threshold_search_min': 0.48,  # Tighter search range around balance to avoid bullish drift.
+    'dir_threshold_search_max': 0.52,
     'dir_threshold_search_step': 0.01,
     'dir_threshold_min_samples': 3000,
     'dir_threshold_min_positive_rate': 0.30,  # Guard against one-sided classifiers.
@@ -768,10 +770,8 @@ CONFIG: Dict[str, Any] = {
     'confidence_position_scaling': True,  # v17: Scale position size by confidence (not fixed %)
     # v18: Class-Balanced Focal Loss with Hard-Example Mining
     'use_focal_loss': True,            # v18: Switch from BCEWithLogitsLoss to FocalLoss
-    'focal_gamma': 1.5,                # v30: ↓ from 2.0 — v29 raw gap INCREASED 10.4%→11.9% with γ=2.0.
-                                       #   Hard examples in stock data are often NOISE (earnings, events) not
-                                       #   learnable patterns. γ=2.0 overfits to noise. γ=1.5 is proven stable.
-    'focal_alpha': 0.5,                # v26→v27: reverted from 0.6 — neutral alpha avoids confounding.
+    'focal_gamma': 1.5,                # Bias training toward hard directional samples.
+    'focal_alpha': 0.40,               # Up-weight easy bullish positives to increase one-sided output.
     # v35: Magnitude-aware direction supervision
     # Down-weight tiny excess-return moves (label noise) and up-weight material moves.
     'use_magnitude_aware_label_smoothing': True,
@@ -804,7 +804,7 @@ CONFIG: Dict[str, Any] = {
     'dynamic_threshold_min_buy_share': 0.08,    # Prevent BUY starvation (all-SELL regimes)
     'dynamic_threshold_max_buy_share': 0.60,
     'dynamic_threshold_target_buy_share': 0.25,
-    'pos_weight_override': None,       # v32: REMOVED — let natural class balance drive predictions.
+    'pos_weight_override': 0.85,       # Under-weight bullish class for class balance.
     # v19: NEW — Feature variance filtering (drop near-constant features)
     'min_feature_variance': 0.01,      # v19: features with var < this across training data are dropped
     # v31: Real-Time Market Safety Parameters (PATENT-PENDING)
@@ -845,12 +845,12 @@ CONFIG: Dict[str, Any] = {
     # Gap-penalized early stopping (v33: prevents overfitting val set)
     'use_gap_penalized_es': True,        # Monitor train-val gap during early stopping
     'gap_penalty_weight': 0.5,           # Penalty weight for generalization gap > 3%
-    'gap_penalty_threshold': 3.0,        # Start penalizing when train-val gap exceeds this %
+    'gap_penalty_threshold': 5.0,        # Start penalizing when train-val gap exceeds this %
     # v50: Institutional-upgrade rollout flags (default OFF for safe migration)
-    'enable_patchtst_encoder': False,
+    'enable_patchtst_encoder': True,
     'patchtst_patch_len': 5,
     'patchtst_patch_stride': 5,
-    'patchtst_layers': 2,
+    'patchtst_layers': 3,
     'patchtst_ff_dim': 128,
     'enable_graph_context': False,
     'graph_context_residual_weight': 0.20,
@@ -876,7 +876,7 @@ CONFIG: Dict[str, Any] = {
     'conformal_width_risk_ref_pct': 8.0,
     'model_version_tag': '34.0.0',
     'enable_regression_training': True,  # v41: train price-action heads with bounded influence.
-    'regression_warmup_epochs': 6,       # v41: ramp regression weights after early direction stabilization.
+    'regression_warmup_epochs': 15,       # v41: ramp regression weights after early direction stabilization.
     'regression_loss_type': 'huber',     # v41: robust loss for heavy-tailed financial targets.
     # v42: Runtime device controls for local training
     'training_device': 'auto',           # auto|cuda|cpu
@@ -895,22 +895,19 @@ CONFIG: Dict[str, Any] = {
     # Phase 1A: Triple Barrier Labeling (replaces fixed-horizon labels)
     'use_triple_barrier_labels': True,         # Event-driven labels: first barrier hit wins
     'triple_barrier_atr_period': 20,           # ATR lookback for barrier width
-    'triple_barrier_upper_mult': 2.0,          # Upper barrier = close × (1 + mult × NATR)
-    'triple_barrier_lower_mult': 1.5,          # Lower barrier = close × (1 - mult × NATR)
-    'triple_barrier_time_limit_weight': 0.3,   # Down-weight time-limit (no-barrier) samples
+    'triple_barrier_upper_mult': 1.0,          # Asymmetric barriers reward upside captures.
+    'triple_barrier_lower_mult': 1.5,
+    'triple_barrier_time_limit_weight': 0.2,   # Down-weight time-limit (no-barrier) samples
     # Phase 1B: Hard Noise Filtering (exclude random-walk samples)
     'noise_exclusion_enabled': True,
-    'noise_exclusion_band': 0.003,             # |excess_return| < 0.3% → excluded from training
+    'noise_exclusion_band': 0.003,             # Retain more samples; avoid over-pruning ambiguous but informative moves.
     # Phase 2A: Cross-Sectional Rank Normalization
     'use_cross_sectional_rank': True,
     'cross_sectional_rank_features': ['rsi_14', 'natr_20', 'log_return',
         'relative_strength_20', 'vol_ratio_5_20', 'mfi', 'delivery_pct'],
+    'cross_sectional_rank_lookback_days': 60,
     # Phase 3A: PCGrad (Projecting Conflicting Gradients)
     'use_pcgrad': True,
-    # Phase 3B: Curriculum Learning
-    'use_curriculum_learning': True,
-    'curriculum_warmup_epochs': 5,             # Easy-first phase
-    'curriculum_full_epoch': 15,               # Full difficulty reached
     # Phase 4A: ALiBi Positional Encoding (replaces sinusoidal)
     'use_alibi': True,
     # Phase 4B: Asymmetric BUY/SELL direction sub-heads
@@ -920,17 +917,27 @@ CONFIG: Dict[str, Any] = {
     'ic_decay_lookback': 100,
     'ic_decay_drop_pct': 50,
     'model_version_tag_v51': '51.0.0',
+    'live_kelly_min_fraction': 0.005,
+    'live_kelly_max_fraction': 0.03,
+    'live_kelly_min_samples': 30,
+    'circuit_breaker_live_win_rate_pct': 45.0,
+    'circuit_breaker_min_samples': 20,
+    'circuit_breaker_consecutive_losses': 8,
+    'production_stage_shadow_min_predictions': 50,
+    'production_stage_shadow_min_accuracy_pct': 55.0,
+    'production_stage_paper_min_predictions': 100,
+    'production_stage_paper_min_win_rate_pct': 52.0,
 }
 
 # Task weights for multi-task training.
 # v41 re-enables bounded regression-head learning with direction-dominant weight,
 # plus warmup scheduling (see regression_warmup_epochs) to protect direction quality.
 TASK_WEIGHTS = {
-    'price': 0.30,      # Price-action anchor (kept below direction to avoid signal drift)
-    'target': 0.20,     # Favourable excursion modeling for target-setting quality
-    'stoploss': 0.15,   # Adverse excursion modeling for risk control quality
+    'price': 0.05,      # Price-action anchor (kept below direction to avoid signal drift)
+    'target': 0.05,     # Favourable excursion modeling for target-setting quality
+    'stoploss': 0.0,   # Adverse excursion modeling for risk control quality
     'direction': 3.0,   # Primary objective remains direction classification
-    'volatility': 0.10, # Volatility-aware sizing/risk context
+    'volatility': 0.02, # Volatility-aware sizing/risk context
 }
 
 
@@ -1399,6 +1406,11 @@ class TemperatureScaling:
         self.temperature = 1.0
         self._platt_a = None  # v17: Platt scaling parameters (fallback)
         self._platt_b = None
+        self._platt_a_buy = None
+        self._platt_b_buy = None
+        self._platt_a_sell = None
+        self._platt_b_sell = None
+        self._iso_reg = None
     
     def calibrate(self, logits: np.ndarray, labels: np.ndarray) -> float:
         """Find optimal temperature minimizing NLL on calibration set."""
@@ -1501,61 +1513,124 @@ class TemperatureScaling:
         return mce * 100
     
     def calibrate_platt(self, logits: np.ndarray, labels: np.ndarray) -> Tuple[float, float]:
-        """
-        v19: Platt Scaling — 2-parameter logistic calibration.
+        from scipy.optimize import minimize, root_scalar
         
-        Fits P(y=1|z) = sigmoid(a*z + b) where z are raw logits.
-        Two parameters (a, b) give more flexibility than temperature scaling
-        (1 parameter), which can only uniformly sharpen/soften all probabilities.
-        Platt scaling can also correct systematic bias (shift via b).
-        
-        Returns (a, b) coefficients.
-        """
-        from scipy.optimize import minimize
-        
-        def nll(params):
+        def nll(params, logits_subset, labels_subset):
             a, b = params
-            scaled = a * logits + b
+            scaled = a * logits_subset + b
             probs = 1 / (1 + np.exp(-np.clip(scaled, -30, 30)))
             probs = np.clip(probs, 1e-7, 1 - 1e-7)
-            return -np.mean(labels * np.log(probs) + (1 - labels) * np.log(1 - probs))
+            return -np.mean(labels_subset * np.log(probs) + (1 - labels_subset) * np.log(1 - probs))
         
-        result = minimize(nll, x0=[1.0, 0.0], method='Nelder-Mead',
-                         options={'maxiter': 5000, 'xatol': 1e-6})
-        self._platt_a = float(result.x[0])
-        self._platt_b = float(result.x[1])
+        # Upper tail (bullish)
+        mask_buy = logits > 0
+        if np.sum(mask_buy) > 100:
+            res_buy = minimize(nll, x0=[1.0, 0.0], args=(logits[mask_buy], labels[mask_buy]), method='Nelder-Mead')
+            self._platt_a_buy, self._platt_b_buy = float(res_buy.x[0]), float(res_buy.x[1])
+        else:
+            self._platt_a_buy, self._platt_b_buy = 1.0, 0.0
+
+        # Lower tail (bearish)
+        mask_sell = logits <= 0
+        if np.sum(mask_sell) > 100:
+            res_sell = minimize(nll, x0=[1.0, 0.0], args=(logits[mask_sell], labels[mask_sell]), method='Nelder-Mead')
+            self._platt_a_sell, self._platt_b_sell = float(res_sell.x[0]), float(res_sell.x[1])
+        else:
+            self._platt_a_sell, self._platt_b_sell = 1.0, 0.0
+
+        # Overall
+        res_all = minimize(nll, x0=[1.0, 0.0], args=(logits, labels), method='Nelder-Mead')
+        self._platt_a, self._platt_b = float(res_all.x[0]), float(res_all.x[1])
+        
+        # Regime neutralization
+        probs = self.platt_probability(logits)
+        prob_mean = np.mean(probs)
+        if abs(prob_mean - 0.50) > 0.02:
+            def mean_diff(shift):
+                scaled = np.zeros_like(logits)
+                scaled[mask_buy] = self._platt_a_buy * logits[mask_buy] + (self._platt_b_buy + shift)
+                scaled[mask_sell] = self._platt_a_sell * logits[mask_sell] + (self._platt_b_sell + shift)
+                p = 1 / (1 + np.exp(-np.clip(scaled, -30, 30)))
+                return np.mean(p) - 0.50
+            try:
+                shift_res = root_scalar(mean_diff, bracket=[-5.0, 5.0])
+                self._platt_b += shift_res.root
+                self._platt_b_buy += shift_res.root
+                self._platt_b_sell += shift_res.root
+            except:
+                pass
+                
         return self._platt_a, self._platt_b
     
+    def calibrate_isotonic(self, logits: np.ndarray, labels: np.ndarray) -> None:
+        from sklearn.isotonic import IsotonicRegression
+        probs = 1 / (1 + np.exp(-np.clip(logits, -30, 30)))
+        self._iso_reg = IsotonicRegression(out_of_bounds="clip").fit(probs, labels)
+
+    def isotonic_probability(self, logits: np.ndarray) -> np.ndarray:
+        probs = 1 / (1 + np.exp(-np.clip(logits, -30, 30)))
+        if getattr(self, '_iso_reg', None) is not None:
+            return self._iso_reg.predict(probs)
+        return probs
+
     def platt_probability(self, logits: np.ndarray) -> np.ndarray:
         """Apply Platt scaling to get calibrated probabilities."""
-        if self._platt_a is None:
+        if self._platt_a_buy is None:
             return self.calibrated_probability(logits)
-        scaled = self._platt_a * logits + self._platt_b
-        return 1 / (1 + np.exp(-np.clip(scaled, -30, 30)))
+        
+        probs = np.zeros_like(logits)
+        mask_buy = logits > 0
+        mask_sell = logits <= 0
+        
+        if np.any(mask_buy):
+            scaled_buy = self._platt_a_buy * logits[mask_buy] + self._platt_b_buy
+            probs[mask_buy] = 1 / (1 + np.exp(-np.clip(scaled_buy, -30, 30)))
+            
+        if np.any(mask_sell):
+            scaled_sell = self._platt_a_sell * logits[mask_sell] + self._platt_b_sell
+            probs[mask_sell] = 1 / (1 + np.exp(-np.clip(scaled_sell, -30, 30)))
+            
+        return probs
     
     def best_calibrated_probability(self, logits: np.ndarray, labels: np.ndarray = None) -> Tuple[np.ndarray, str]:
-        """
-        v19: Choose the best calibration method by comparing ECE on held-out data.
-        Returns (calibrated_probs, method_name).
-        If labels is None, uses Platt if available, else temperature.
-        """
         temp_probs = self.calibrated_probability(logits)
         
+        candidates = [('Temperature', temp_probs, self.temperature)]
         if self._platt_a is not None:
-            platt_probs = self.platt_probability(logits)
+            candidates.append(('Platt', self.platt_probability(logits), None))
+        if getattr(self, '_iso_reg', None) is not None:
+            candidates.append(('Isotonic', self.isotonic_probability(logits), None))
             
-            if labels is not None:
-                temp_ece = self.expected_calibration_error(temp_probs, labels)
+        if labels is not None:
+            best_name = 'Temperature'
+            best_probs = temp_probs
+            best_ece = self.expected_calibration_error(temp_probs, labels)
+            
+            if self._platt_a is not None:
+                platt_probs = self.platt_probability(logits)
                 platt_ece = self.expected_calibration_error(platt_probs, labels)
-                
-                if platt_ece < temp_ece:
-                    return platt_probs, f"Platt (a={self._platt_a:.3f}, b={self._platt_b:.3f}, ECE={platt_ece:.2f}%)"
-                else:
-                    return temp_probs, f"Temperature (T={self.temperature:.3f}, ECE={temp_ece:.2f}%)"
-            else:
-                return platt_probs, f"Platt (a={self._platt_a:.3f}, b={self._platt_b:.3f})"
-        
-        return temp_probs, f"Temperature (T={self.temperature:.3f})"
+                if platt_ece < best_ece:
+                    best_ece = platt_ece
+                    best_name = f"Platt (a={self._platt_a:.3f}, b={self._platt_b:.3f}, ECE={platt_ece:.2f}%)"
+                    best_probs = platt_probs
+                    
+            if getattr(self, '_iso_reg', None) is not None:
+                iso_probs = self.isotonic_probability(logits)
+                iso_ece = self.expected_calibration_error(iso_probs, labels)
+                if iso_ece < best_ece:
+                    best_ece = iso_ece
+                    best_name = f"Isotonic (ECE={iso_ece:.2f}%)"
+                    best_probs = iso_probs
+                    
+            if best_name == 'Temperature':
+                best_name = f"Temperature (T={self.temperature:.3f}, ECE={best_ece:.2f}%)"
+            return best_probs, best_name
+        else:
+            if getattr(self, '_iso_reg', None) is not None:
+                return self.isotonic_probability(logits), "Isotonic"
+            if self._platt_a is not None:
+                return self.platt_probability(logits), f"Platt (a={self._platt_a:.3f}, b={self._platt_b:.3f})"
+            return temp_probs, f"Temperature (T={self.temperature:.3f})"
 
 
 # ==================== SINUSOIDAL POSITIONAL ENCODING ====================
@@ -1625,11 +1700,18 @@ class ALiBiPositionalBias(nn.Module):
         super().__init__()
         self.num_heads = num_heads
         
-        # Compute head-specific slopes (geometric series)
-        slopes = torch.tensor([
-            2.0 ** (-8.0 * (i + 1) / num_heads)
-            for i in range(num_heads)
-        ], dtype=torch.float32)
+        # Reduce ALiBi slopes by 50% to preserve longer-term sequence context
+        # The steepest head keeps the standard decay, the shallowest gets a near-zero slope
+        slopes = []
+        for i in range(num_heads):
+            if i == 0:
+                slopes.append(2.0 ** (-8.0 / num_heads))
+            elif i == num_heads - 1:
+                slopes.append(1.0 / (4.0 * max_len))
+            else:
+                slopes.append(2.0 ** (-4.0 * (i + 1) / num_heads))
+        
+        slopes = torch.tensor(slopes, dtype=torch.float32)
         
         # Pre-compute distance matrix for max_len
         positions = torch.arange(max_len, dtype=torch.float32)
@@ -2332,6 +2414,30 @@ class MultiTargetStockDataset(Dataset):
             self.direction_weights = direction_weights.astype(np.float32)
         self.ticker_graph_context = ticker_graph_context
         self.seq_len = CONFIG['seq_len']
+        self.device = None
+        
+    def to(self, device: str):
+        """Pre-move entire dataset to GPU if it fits, reducing dataloader bottleneck."""
+        import torch
+        if device == 'cpu':
+            return self
+        
+        # Check memory footprint first
+        n_features = self.feat_arrays[0].shape[1] if self.feat_arrays else 0
+        total_rows = sum(arr.shape[0] for arr in self.feat_arrays)
+        mem_bytes = total_rows * n_features * 4  # float32 = 4 bytes
+        if mem_bytes > 4e9:  # > 4GB, don't pre-move
+            logger.info(f"Dataset too large for full GPU pre-load ({mem_bytes/1e9:.2f}GB > 4GB). Using host memory.")
+            return self
+            
+        logger.info(f"Pre-moving entire dataset to {device} ({mem_bytes/1e9:.2f}GB) for maximum throughput...")
+        self.device = device
+        self.feat_arrays = [torch.from_numpy(arr).to(device) for arr in self.feat_arrays]
+        self.targets = torch.from_numpy(self.targets).to(device)
+        self.direction_weights = torch.from_numpy(self.direction_weights).to(device)
+        if self.ticker_graph_context:
+            self.ticker_graph_context = [torch.from_numpy(arr).to(device) for arr in self.ticker_graph_context]
+        return self
     
     def __len__(self):
         return len(self.index)
@@ -2341,6 +2447,18 @@ class MultiTargetStockDataset(Dataset):
         seq = self.feat_arrays[ticker_idx][start_row:start_row + self.seq_len]
         
         target_vals = self.targets[idx]
+        
+        if self.device is not None:
+            # Already torch tensors on device
+            targets_dict = {
+                k: target_vals[i:i+1] for i, k in enumerate(self.TARGET_KEYS)
+            }
+            targets_dict['direction_weight'] = self.direction_weights[idx:idx+1]
+            if self.ticker_graph_context is not None:
+                targets_dict['graph_context'] = self.ticker_graph_context[ticker_idx]
+            return seq, targets_dict
+            
+        # Numpy arrays -> CPU tensors
         targets_dict = {
             k: torch.tensor([v], dtype=torch.float32)
             for k, v in zip(self.TARGET_KEYS, target_vals)
@@ -4083,6 +4201,277 @@ class PeriodicRetrainer:
 # ==================== MAIN PREDICTOR CLASS ====================
 
 
+class DynamicKellyCalculator:
+    """Position sizing that contracts to live realized edge instead of backtest edge."""
+
+    def __init__(self, win_rate_tracker: 'WinRateTracker',
+                 min_fraction: Optional[float] = None,
+                 max_fraction: Optional[float] = None,
+                 min_samples: Optional[int] = None):
+        self.win_rate_tracker = win_rate_tracker
+        self.min_fraction = float(min_fraction if min_fraction is not None else CONFIG.get('live_kelly_min_fraction', 0.005))
+        self.max_fraction = float(max_fraction if max_fraction is not None else CONFIG.get('live_kelly_max_fraction', 0.03))
+        self.min_samples = int(min_samples if min_samples is not None else CONFIG.get('live_kelly_min_samples', 30))
+
+    def _get_live_stats(self, signal: str) -> Dict[str, float]:
+        query = text("""
+            SELECT
+                COUNT(*) AS n,
+                AVG(CASE WHEN direction_correct THEN 1.0 ELSE 0.0 END) AS win_rate,
+                AVG(CASE WHEN actual_return_pct > 0 THEN actual_return_pct END) AS avg_win_pct,
+                AVG(CASE WHEN actual_return_pct < 0 THEN actual_return_pct END) AS avg_loss_pct
+            FROM prediction_outcomes
+            WHERE outcome != 'PENDING'
+              AND signal = :signal
+        """)
+        try:
+            with self.win_rate_tracker.engine.connect() as conn:
+                row = conn.execute(query, {'signal': signal}).fetchone()
+            return {
+                'n': int((row[0] if row else 0) or 0),
+                'win_rate': float((row[1] if row else 0.5) or 0.5),
+                'avg_win_pct': float((row[2] if row else 1.0) or 1.0),
+                'avg_loss_pct': float((row[3] if row else -1.0) or -1.0),
+            }
+        except Exception:
+            return {'n': 0, 'win_rate': 0.5, 'avg_win_pct': 1.0, 'avg_loss_pct': -1.0}
+
+    def get_fraction(self, signal: str, fallback_fraction: float) -> Dict[str, Any]:
+        stats = self._get_live_stats(signal)
+        if stats['n'] < self.min_samples:
+            _max_frac = self.max_fraction
+            if 'BUY' in signal.upper() and stats['n'] < 50:
+                _max_frac = min(_max_frac, 0.02)
+                
+            return {
+                'fraction': float(np.clip(fallback_fraction, self.min_fraction, _max_frac)),
+                'source': 'fallback',
+                'n_live_trades': stats['n'],
+                'live_win_rate': stats['win_rate'],
+                'full_kelly': None,
+            }
+
+        avg_win = max(stats['avg_win_pct'] / 100.0, 1e-4)
+        avg_loss = max(abs(stats['avg_loss_pct']) / 100.0, 1e-4)
+        b = avg_win / avg_loss
+        p = float(np.clip(stats['win_rate'], 0.0, 1.0))
+        q = 1.0 - p
+        full_kelly = (p * b - q) / max(b, 1e-8)
+        half_kelly = max(full_kelly, 0.0) * 0.5
+        
+        _max_frac = self.max_fraction
+        if 'BUY' in signal.upper() and stats['n'] < 50:
+            _max_frac = min(_max_frac, 0.02)
+            
+        fraction = float(np.clip(half_kelly, self.min_fraction, _max_frac))
+        return {
+            'fraction': fraction,
+            'source': 'empirical_live',
+            'n_live_trades': stats['n'],
+            'live_win_rate': stats['win_rate'],
+            'full_kelly': float(full_kelly),
+            'avg_win_pct': stats['avg_win_pct'],
+            'avg_loss_pct': stats['avg_loss_pct'],
+        }
+
+
+class ModelDegradationCircuitBreaker:
+    """Blocks live signals when realized production performance degrades."""
+
+    def __init__(self, win_rate_tracker: 'WinRateTracker',
+                 min_win_rate_pct: Optional[float] = None,
+                 min_samples: Optional[int] = None,
+                 max_consecutive_losses: Optional[int] = None):
+        self.win_rate_tracker = win_rate_tracker
+        self.min_win_rate_pct = float(min_win_rate_pct if min_win_rate_pct is not None else CONFIG.get('circuit_breaker_live_win_rate_pct', 45.0))
+        self.min_samples = int(min_samples if min_samples is not None else CONFIG.get('circuit_breaker_min_samples', 20))
+        self.max_consecutive_losses = int(max_consecutive_losses if max_consecutive_losses is not None else CONFIG.get('circuit_breaker_consecutive_losses', 8))
+
+    def _get_recent_stats(self) -> Dict[str, Any]:
+        stats = self.win_rate_tracker.get_win_rate()
+        overview = stats.get('overview', stats) if isinstance(stats, dict) else {}
+        return {
+            'verified': int(overview.get('verified', 0) or 0),
+            'win_rate_pct': float(overview.get('win_rate_pct', 100.0) or 100.0),
+        }
+
+    def _get_consecutive_losses(self) -> int:
+        query = text("""
+            SELECT direction_correct
+            FROM prediction_outcomes
+            WHERE outcome != 'PENDING'
+            ORDER BY prediction_date DESC
+            LIMIT 20
+        """)
+        try:
+            with self.win_rate_tracker.engine.connect() as conn:
+                rows = conn.execute(query).fetchall()
+            losses = 0
+            for row in rows:
+                if bool(row[0]):
+                    break
+                losses += 1
+            return losses
+        except Exception:
+            return 0
+
+    def should_block(self) -> Tuple[bool, str]:
+        stats = self._get_recent_stats()
+        if stats['verified'] >= self.min_samples and stats['win_rate_pct'] < self.min_win_rate_pct:
+            return True, (
+                f"CIRCUIT BREAKER: live win rate {stats['win_rate_pct']:.1f}% "
+                f"below {self.min_win_rate_pct:.1f}% over {stats['verified']} verified predictions."
+            )
+        losses = self._get_consecutive_losses()
+        if losses >= self.max_consecutive_losses:
+            return True, f"CIRCUIT BREAKER: {losses} consecutive verified losses detected."
+        return False, ''
+
+
+class ProductionModelRegistry:
+    """Minimal staged deployment registry for shadow, paper, and live promotion."""
+
+    def __init__(self, db_url: str = DB_URL):
+        self.engine = create_engine(
+            db_url,
+            pool_pre_ping=True,
+            connect_args={'connect_timeout': 5, 'options': '-c statement_timeout=30000'}
+        )
+        self._ensure_table()
+
+    def _ensure_table(self):
+        create_sql = text("""
+            CREATE TABLE IF NOT EXISTS model_registry (
+                id SERIAL PRIMARY KEY,
+                model_version VARCHAR(40) NOT NULL,
+                stage VARCHAR(20) NOT NULL,
+                model_path TEXT NOT NULL,
+                metrics_json TEXT,
+                is_active BOOLEAN DEFAULT FALSE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                activated_at TIMESTAMP
+            )
+        """)
+        with self.engine.begin() as conn:
+            conn.execute(create_sql)
+
+    def register_model(self, model_version: str, model_path: str, metrics: Dict[str, Any]) -> int:
+        insert_sql = text("""
+            INSERT INTO model_registry (model_version, stage, model_path, metrics_json, is_active)
+            VALUES (:model_version, 'shadow', :model_path, :metrics_json, FALSE)
+            RETURNING id
+        """)
+        payload = {
+            'model_version': model_version,
+            'model_path': model_path,
+            'metrics_json': json.dumps(metrics, default=str),
+        }
+        with self.engine.begin() as conn:
+            row_id = conn.execute(insert_sql, payload).fetchone()[0]
+        return int(row_id)
+
+    def get_active_model_path(self) -> Optional[str]:
+        query = text("""
+            SELECT model_path
+            FROM model_registry
+            WHERE stage = 'live' AND is_active = TRUE
+            ORDER BY activated_at DESC NULLS LAST, created_at DESC
+            LIMIT 1
+        """)
+        try:
+            with self.engine.connect() as conn:
+                row = conn.execute(query).fetchone()
+            return str(row[0]) if row and row[0] else None
+        except Exception:
+            return None
+
+    def promote_if_qualified(self, version_id: int, win_rate_tracker: 'WinRateTracker') -> Dict[str, Any]:
+        query = text("SELECT id, stage, metrics_json FROM model_registry WHERE id = :id")
+        with self.engine.connect() as conn:
+            row = conn.execute(query, {'id': version_id}).fetchone()
+        if not row:
+            return {'promoted': False, 'reason': 'missing_version'}
+
+        current_stage = str(row[1])
+        metrics = json.loads(row[2] or '{}')
+        stats = win_rate_tracker.get_win_rate()
+        overview = stats.get('overview', stats) if isinstance(stats, dict) else {}
+        verified = int(overview.get('verified', 0) or 0)
+        win_rate = float(overview.get('win_rate_pct', 0.0) or 0.0)
+        direction_accuracy = float(metrics.get('direction_accuracy', metrics.get('test_direction_accuracy', 0.0)) or 0.0)
+
+        next_stage = None
+        if current_stage == 'shadow':
+            if verified >= int(CONFIG.get('production_stage_shadow_min_predictions', 50)) and direction_accuracy >= float(CONFIG.get('production_stage_shadow_min_accuracy_pct', 55.0)):
+                next_stage = 'paper_trade'
+        elif current_stage == 'paper_trade':
+            if verified >= int(CONFIG.get('production_stage_paper_min_predictions', 100)) and win_rate >= float(CONFIG.get('production_stage_paper_min_win_rate_pct', 52.0)):
+                next_stage = 'live'
+
+        if next_stage is None:
+            return {'promoted': False, 'reason': 'thresholds_not_met', 'stage': current_stage}
+
+        with self.engine.begin() as conn:
+            if next_stage == 'live':
+                conn.execute(text("UPDATE model_registry SET is_active = FALSE WHERE stage = 'live'"))
+            conn.execute(text("""
+                UPDATE model_registry
+                SET stage = :stage, is_active = :is_active, activated_at = CURRENT_TIMESTAMP
+                WHERE id = :id
+            """), {'stage': next_stage, 'is_active': next_stage == 'live', 'id': version_id})
+        return {'promoted': True, 'stage': next_stage}
+
+    def rollback_to_previous_live(self) -> bool:
+        query = text("""
+            SELECT id
+            FROM model_registry
+            WHERE stage = 'live'
+            ORDER BY activated_at DESC NULLS LAST, created_at DESC
+            LIMIT 2
+        """)
+        with self.engine.connect() as conn:
+            rows = conn.execute(query).fetchall()
+        if len(rows) < 2:
+            return False
+        current_id = int(rows[0][0])
+        previous_id = int(rows[1][0])
+        with self.engine.begin() as conn:
+            conn.execute(text("UPDATE model_registry SET is_active = FALSE WHERE id = :id"), {'id': current_id})
+            conn.execute(text("UPDATE model_registry SET is_active = TRUE, activated_at = CURRENT_TIMESTAMP WHERE id = :id"), {'id': previous_id})
+        return True
+
+
+class ModelHealthAPI:
+    """Aggregates live model health for application dashboards."""
+
+    def __init__(self, win_rate_tracker: 'WinRateTracker',
+                 safety_guard: 'ProductionSafetyGuard',
+                 circuit_breaker: ModelDegradationCircuitBreaker,
+                 model_registry: Optional[ProductionModelRegistry] = None):
+        self.win_rate_tracker = win_rate_tracker
+        self.safety_guard = safety_guard
+        self.circuit_breaker = circuit_breaker
+        self.model_registry = model_registry
+
+    def get_health_summary(self) -> Dict[str, Any]:
+        stats = self.win_rate_tracker.get_win_rate()
+        overview = stats.get('overview', stats) if isinstance(stats, dict) else {}
+        health = self.safety_guard.check_model_health()
+        blocked, reason = self.circuit_breaker.should_block()
+        return {
+            'status': 'CRITICAL' if blocked else ('WARNING' if not health.get('healthy', True) else 'HEALTHY'),
+            'live_win_rate_pct': float(overview.get('win_rate_pct', 0.0) or 0.0),
+            'verified_predictions': int(overview.get('verified', 0) or 0),
+            'pending_predictions': int(overview.get('pending', 0) or 0),
+            'circuit_breaker_blocked': blocked,
+            'circuit_breaker_reason': reason,
+            'signal_distribution': health.get('signal_distribution', {}),
+            'probability_std': health.get('prob_std', 0.0),
+            'active_model_path': self.model_registry.get_active_model_path() if self.model_registry else None,
+            'checked_at': datetime.now().isoformat(),
+        }
+
+
 class ProductionSafetyGuard:
     """
     PATENT-PENDING: Production Safety Guard for Autonomous Trading (v16)
@@ -4604,6 +4993,15 @@ class UnifiedStockPredictor:
         )
         self.win_rate_tracker = WinRateTracker(db_url=db_url)  # v16: Persistent win rate DB
         self.retrainer = PeriodicRetrainer(self.win_rate_tracker, db_url=db_url)  # v16: Periodic retraining
+        self.model_registry = ProductionModelRegistry(db_url=db_url)
+        self.dynamic_kelly = DynamicKellyCalculator(self.win_rate_tracker)
+        self.circuit_breaker = ModelDegradationCircuitBreaker(self.win_rate_tracker)
+        self.model_health_api = ModelHealthAPI(
+            self.win_rate_tracker,
+            self.safety_guard,
+            self.circuit_breaker,
+            self.model_registry,
+        )
         self._optimal_dir_threshold = 0.5  # Updated during training or model load
         self._dir_pos_weight = 1.0         # Updated during training
         self._temperature = 1.0            # v9: Temperature scaling (calibrated post-training)
@@ -4718,6 +5116,10 @@ class UnifiedStockPredictor:
             logger.info("   Loading latest model artifacts from disk...")
             self._load_model()
 
+    def get_model_health_summary(self) -> Dict[str, Any]:
+        """Public health snapshot for dashboards and readiness checks."""
+        return self.model_health_api.get_health_summary()
+
     def _get_active_task_weights(self, epoch: Optional[int] = None) -> Dict[str, float]:
         """Resolve effective task weights with optional warmup ramp for regression heads."""
         keys = ('price', 'target', 'stoploss', 'direction', 'volatility')
@@ -4799,7 +5201,8 @@ class UnifiedStockPredictor:
         if _cache is not None:
             _cached_val, _cached_time, _cached_pd = _cache
             _age_hours = (time.time() - _cached_time) / 3600
-            if _age_hours < 24.0 and _cached_pd == pred_days:
+            _max_age = CONFIG.get('max_predict_cache_age_hours', 24.0)
+            if _age_hours < _max_age and _cached_pd == pred_days:
                 return _cached_val
         
         try:
@@ -5187,25 +5590,6 @@ class UnifiedStockPredictor:
         
         result_df = pd.concat(all_dfs, ignore_index=True)
         
-        # v51: Cross-Sectional Rank Normalization (Phase 2)
-        # Instead of just raw features, compute cross-sectional ranks for key momentum/volatility indicators.
-        # This isolates true outperformance from broad market moves on any given day.
-        logger.info("   Computing cross-sectional ranks...")
-        # Select momentum, relative volume, and return features for ranking
-        rank_cols = [c for c in result_df.columns if isinstance(c, str) and 
-                     any(x in c for x in ['rsi', 'macd', 'return', 'momentum', 'amihud', 'vol_clock'])]
-        if rank_cols and 'date' in result_df.columns:
-            # Group by date and rank (pct=True scales to [0, 1])
-            ranked_df = result_df.groupby('date')[rank_cols].rank(pct=True)
-            # Fill NaNs with 0.5 (median rank) for days with all NaNs
-            ranked_df = ranked_df.fillna(0.5)
-            # Rename columns
-            ranked_cols_map = {c: f"{c}_cs_rank" for c in rank_cols}
-            ranked_df = ranked_df.rename(columns=ranked_cols_map)
-            # Concatenate
-            result_df = pd.concat([result_df, ranked_df], axis=1)
-            logger.info(f"   Added cross-sectional ranks for {len(rank_cols)} features.")
-        
         logger.info(f"Engineered features for {len(all_dfs)} tickers")
         logger.info(f"   Total rows: {len(result_df):,}")
         logger.info(f"   Features: {len(result_df.columns)}")
@@ -5400,6 +5784,7 @@ class UnifiedStockPredictor:
         
         # Build arrays: (features, close, high, low, nifty_close) per ticker
         ticker_arrays = []
+        ticker_date_arrays: List[np.ndarray] = []
         ticker_keys_for_arrays: List[str] = []
         all_index = []
         
@@ -5458,6 +5843,7 @@ class UnifiedStockPredictor:
                 
                 ticker_idx = len(ticker_arrays)
                 ticker_arrays.append((feat_arr, close_arr, high_arr, low_arr, nifty_arr, natr_arr))
+                ticker_date_arrays.append(pd.to_datetime(ticker_df['date']).to_numpy())
                 ticker_keys_for_arrays.append(self._canonical_ticker(ticker))
                 
                 n_valid = len(feat_arr) - seq_len - pred_days
@@ -5489,43 +5875,42 @@ class UnifiedStockPredictor:
         logger.info(f"Indexed {total_sequences:,} sequences across {len(ticker_arrays)} tickers")
         
         # ================================================================
-        # Time-based Train/Validation/Test split (per ticker)
+        # Time-based Train/Validation/Test split with calendar-day embargo
         # ================================================================
-        # For each ticker, use first 70% for train, next 15% for val, last 15% for test.
-        # v8: Added embargo/purge gap of (pred_days + 1) between splits.
-        # Without gap, the LAST training sample's TARGET extends pred_days=5 into
-        # the val period, leaking future prices into training loss. Similarly for
-        # val→test boundary. The gap prevents this temporal target leakage.
-        # ================================================================
-        # This prevents temporal data leakage across tickers.
         train_index, val_index, test_index = [], [], []
-        
-        # Group indices by ticker
-        from collections import defaultdict as _dd
-        ticker_indices = _dd(list)
-        for item in all_index:
-            ticker_indices[item[0]].append(item)
-        
-        # v19: Proper purge gap — must be at least seq_len + pred_days to prevent
-        # feature window overlap between splits. The old gap of pred_days+1=6 was
-        # far too small: a training sample's features look back seq_len=40 days,
-        # so features from the last training sample overlap with the first val sample.
-        # Additionally, technical indicators (SMA_50, etc.) look back even further.
-        gap = CONFIG.get('purge_gap_size', seq_len + pred_days) if CONFIG.get('purge_gap', True) else 0
-        
-        for t_idx, items in ticker_indices.items():
-            n = len(items)
-            train_end = int(n * 0.70)
-            val_start = min(train_end + gap, n)
-            val_end = int(n * 0.85)
-            test_start = min(val_end + gap, n)
-            train_index.extend(items[:train_end])
-            val_index.extend(items[val_start:val_end])
-            test_index.extend(items[test_start:])
-        
+
+        all_dates = pd.to_datetime(df['date']).sort_values().unique()
+        if len(all_dates) < 10:
+            raise ValueError("Not enough unique dates for temporal splitting")
+
+        train_cut_idx = max(int(len(all_dates) * 0.70) - 1, 0)
+        val_cut_idx = max(int(len(all_dates) * 0.85) - 1, train_cut_idx)
+        train_end_date = pd.Timestamp(all_dates[train_cut_idx])
+        val_end_date = pd.Timestamp(all_dates[val_cut_idx])
+        gap_days = int(CONFIG.get('purge_gap_calendar_days', CONFIG.get('purge_gap_size', 60))) if CONFIG.get('purge_gap', True) else 0
+        val_start_date = train_end_date + pd.Timedelta(days=gap_days)
+        test_start_date = val_end_date + pd.Timedelta(days=gap_days)
+
+        for t_idx, (_, _, _, _, _, _) in enumerate(ticker_arrays):
+            date_arr = ticker_date_arrays[t_idx]
+            n_valid = len(date_arr) - seq_len - pred_days
+            for s_row in range(max(n_valid, 0)):
+                seq_end_date = pd.Timestamp(date_arr[s_row + seq_len - 1])
+                item = (t_idx, s_row)
+                if seq_end_date <= train_end_date:
+                    train_index.append(item)
+                elif val_start_date <= seq_end_date <= val_end_date:
+                    val_index.append(item)
+                elif seq_end_date >= test_start_date:
+                    test_index.append(item)
+
         logger.info(f"   Train: {len(train_index):,} | Val: {len(val_index):,} | Test: {len(test_index):,}")
-        if gap > 0:
-            logger.info(f"   Purge gap: {gap} samples between splits (prevents target leakage)")
+        if gap_days > 0:
+            logger.info(
+                f"   Calendar embargo: {gap_days} days | "
+                f"train_end={train_end_date.date()} val_start={val_start_date.date()} "
+                f"val_end={val_end_date.date()} test_start={test_start_date.date()}"
+            )
         
         # ================================================================
         # Fit scalers on sample
@@ -5705,16 +6090,16 @@ class UnifiedStockPredictor:
             # 2. Target move — log of max favorable excursion
             target_move = np.where(
                 is_bullish,
-                np.log(max_future_high / (cur_prices + 1e-8)),
-                np.log((cur_prices + 1e-8) / np.maximum(min_future_low, 1e-8))
+                np.log(np.maximum(max_future_high, cur_prices) / (cur_prices + 1e-8)),
+                np.log((cur_prices + 1e-8) / np.minimum(min_future_low + 1e-8, cur_prices))
             )
             target_move = np.maximum(target_move, 0.0)
             
             # 3. Stop-loss distance — log of max adverse excursion (× 1.1 buffer)
             max_dd = np.where(
                 is_bullish,
-                np.log((cur_prices + 1e-8) / np.maximum(min_future_low, 1e-8)),
-                np.log(max_future_high / (cur_prices + 1e-8))
+                np.log((cur_prices + 1e-8) / np.minimum(min_future_low + 1e-8, cur_prices)),
+                np.log(np.maximum(max_future_high, cur_prices) / (cur_prices + 1e-8))
             )
             sl_distance = np.maximum(max_dd * 1.1, 0.0)
             
@@ -5955,15 +6340,27 @@ class UnifiedStockPredictor:
             ticker_graph_context=ticker_graph_context,
         )
         
+        # Try to pre-move to GPU if it fits
+        train_dataset.to(self.device)
+        val_dataset.to(self.device)
+        
+        # DataLoader setup
+        # If pre-moved to GPU, pin_memory should be False to avoid issues
+        use_pin_memory_actual = use_pin_memory and (train_dataset.device is None)
+        loader_kwargs = {
+            "batch_size": batch_size,
+            "num_workers": num_workers,
+            "pin_memory": use_pin_memory_actual,
+        }
+        if num_workers > 0:
+            loader_kwargs["persistent_workers"] = True
+            loader_kwargs["prefetch_factor"] = 2
+            
         train_loader = DataLoader(
-            train_dataset, batch_size=batch_size, shuffle=True,
-            num_workers=num_workers, pin_memory=use_pin_memory,
-            persistent_workers=num_workers > 0,
+            train_dataset, shuffle=True, **loader_kwargs
         )
         val_loader = DataLoader(
-            val_dataset, batch_size=batch_size, shuffle=False,
-            num_workers=num_workers, pin_memory=use_pin_memory,
-            persistent_workers=num_workers > 0,
+            val_dataset, shuffle=False, **loader_kwargs
         )
         
         # ================================================================
@@ -6132,6 +6529,7 @@ class UnifiedStockPredictor:
         # ================================================================
         gpu_monitor_interval = CONFIG.get('gpu_monitor_interval', 50)
         training_start_time = time.time()
+        prev_gap = 0.0
         
         for epoch in range(epochs):
             self._current_epoch = epoch
@@ -6154,6 +6552,8 @@ class UnifiedStockPredictor:
             # v33: Track training direction accuracy for gap-penalized ES
             _train_dir_correct = 0
             _train_dir_total = 0
+            _epoch_bull_count = 0
+            _epoch_bear_count = 0
             
             # v19-GPU: Clear GPU cache at epoch start to reduce fragmentation
             if self.device == 'cuda':
@@ -6168,6 +6568,10 @@ class UnifiedStockPredictor:
             for batch_idx, (features, targets) in enumerate(pbar):
                 features = features.to(self.device, non_blocking=True)
                 targets = {k: v.to(self.device, non_blocking=True) for k, v in targets.items()}
+                
+                if 'direction' in targets:
+                    _epoch_bull_count += (targets['direction'] > 0.5).sum().item()
+                    _epoch_bear_count += (targets['direction'] <= 0.5).sum().item()
                 
                 # ============================================================
                 # v13: PATENT-PENDING — Mixup Data Augmentation for Finance
@@ -6256,10 +6660,13 @@ class UnifiedStockPredictor:
                         # Apply PCGrad surgery to compute gradients for shared params
                         PCGrad.compute_surgery_gradient(scaled_task_losses, shared_params)
                         
+                        # Zero the gradients of the shared params so that subsequent .backward()
+                        # on task losses does not double-apply gradients to them.
+                        for p in shared_params:
+                            if p.grad is not None:
+                                p.grad.zero_()
+                                
                         # Now backward the remaining parts (task-specific heads)
-                        # We just zero the gradients of the shared params before backwarding total loss, 
-                        # but retain_graph is needed. Actually, computing surgery gradient already does autograd.grad.
-                        # We just need to do .backward() on the scaled losses for the head params.
                         for sl in scaled_task_losses:
                             sl.backward(retain_graph=True)
                     else:
@@ -6301,6 +6708,11 @@ class UnifiedStockPredictor:
                         ]
                         scaled_task_losses = [l / accum_steps for l in task_losses.values()]
                         PCGrad.compute_surgery_gradient(scaled_task_losses, shared_params)
+                        
+                        for p in shared_params:
+                            if p.grad is not None:
+                                p.grad.zero_()
+                                
                         for sl in scaled_task_losses:
                             sl.backward(retain_graph=True)
                     else:
@@ -6330,6 +6742,11 @@ class UnifiedStockPredictor:
                 pbar.set_postfix(postfix_dict)
             
             train_loss /= len(train_loader)
+            
+            _total_samples = _epoch_bull_count + _epoch_bear_count
+            if _total_samples > 0:
+                _bull_pct = _epoch_bull_count / _total_samples * 100
+                logger.info(f"   Train Label Balance: {_epoch_bull_count} Bull ({_bull_pct:.1f}%), {_epoch_bear_count} Bear ({100-_bull_pct:.1f}%)")
             
             # ---- Validation (using EMA weights for stability) ----
             ema.apply_shadow(self.model)
@@ -6441,14 +6858,18 @@ class UnifiedStockPredictor:
                 monitor_value = raw_monitor
                 if CONFIG.get('use_gap_penalized_es', True):
                     _dir_gap = max(0.0, train_dir_acc - dir_acc)
-                    _penalized_dir = self._gap_penalized_early_stop_score(dir_acc, train_dir_acc)
-                    _gap_penalty = max(0.0, dir_acc - _penalized_dir)
+                    _gap_growth = max(0.0, _dir_gap - prev_gap)
+                    
+                    _gap_weight = 0.0 if epoch < 12 else CONFIG.get('gap_penalty_weight', 0.5)
+                    _gap_penalty = _gap_weight * max(0.0, _gap_growth - 1.0)
+                    
                     monitor_value = raw_monitor - _gap_penalty
-                    if _dir_gap > CONFIG.get('gap_penalty_threshold', 3.0):
+                    if _dir_gap > CONFIG.get('gap_penalty_threshold', 5.0):
                         logger.info(
                             f"   v40 Gap penalty: train_dir={train_dir_acc:.1f}% vs val_dir={dir_acc:.1f}% "
-                            f"(gap={_dir_gap:.1f}%), score={monitor_value:.4f} (raw={raw_monitor:.4f})"
+                            f"(gap={_dir_gap:.1f}%, prev={prev_gap:.1f}%), score={monitor_value:.4f} (raw={raw_monitor:.4f})"
                         )
+                    prev_gap = _dir_gap
                 improved = monitor_value > (best_score + min_delta)
             else:
                 monitor_value = raw_monitor
@@ -6732,17 +7153,31 @@ class UnifiedStockPredictor:
             logger.info(f"   v19 Platt scaling: a={_platt_a:.4f}, b={_platt_b:.4f}")
             logger.info(f"   Val ECE with Platt:          {_platt_ece:.2f}%")
             
+            _temp_scaler.calibrate_isotonic(_cal_logits_holdout, _cal_labels_holdout)
+            if getattr(_temp_scaler, '_iso_reg', None) is not None:
+                _iso_probs_v = _temp_scaler.isotonic_probability(_cal_logits_arr)
+                _iso_ece = TemperatureScaling.expected_calibration_error(_iso_probs_v, _cal_labels_arr)
+                logger.info(f"   Val ECE with Isotonic:       {_iso_ece:.2f}%")
+            else:
+                _iso_ece = float('inf')
+            
             # Choose the better calibration method
-            if _platt_ece < _ece_after:
+            best_ece = min(_platt_ece, _iso_ece, _ece_after)
+            if best_ece == _iso_ece and _iso_ece < float('inf'):
+                self._calibrator_type = 'isotonic'
+                logger.info(f"   → Using Isotonic regression (ECE {_iso_ece:.2f}%)")
+            elif best_ece == _platt_ece:
                 self._calibrator_type = 'platt'
-                logger.info(f"   → Using Platt scaling (ECE {_platt_ece:.2f}% < Temperature {_ece_after:.2f}%)")
+                logger.info(f"   → Using Platt scaling (ECE {_platt_ece:.2f}%)")
             else:
                 self._calibrator_type = 'temperature'
-                logger.info(f"   → Using Temperature scaling (ECE {_ece_after:.2f}% ≤ Platt {_platt_ece:.2f}%)")
+                logger.info(f"   → Using Temperature scaling (ECE {_ece_after:.2f}%)")
 
             # v40: Build policy-tuning set from calibration holdout (not test set)
             # to avoid test leakage in threshold/reliability optimization.
-            if self._calibrator_type == 'platt' and _temp_scaler._platt_a is not None:
+            if self._calibrator_type == 'isotonic' and getattr(_temp_scaler, '_iso_reg', None) is not None:
+                _policy_probs = _temp_scaler.isotonic_probability(_cal_logits_holdout)
+            elif self._calibrator_type == 'platt' and _temp_scaler._platt_a is not None:
                 _policy_probs = _temp_scaler.platt_probability(_cal_logits_holdout)
             else:
                 _policy_probs = _temp_scaler.calibrated_probability(_cal_logits_holdout)
@@ -6791,6 +7226,7 @@ class UnifiedStockPredictor:
             best_ckpt['temperature'] = _T_opt
             best_ckpt['platt_a'] = _platt_a
             best_ckpt['platt_b'] = _platt_b
+            best_ckpt['iso_reg'] = getattr(_temp_scaler, '_iso_reg', None)
             best_ckpt['calibrator_type'] = self._calibrator_type
             best_ckpt['optimal_dir_threshold'] = self._optimal_dir_threshold
             best_ckpt['direction_threshold_meta'] = _thr_meta
@@ -6958,19 +7394,19 @@ class UnifiedStockPredictor:
             _sell_thr = CONFIG.get('min_sell_threshold', 0.35)
             _buy_mask_asym = _best_test_probs > _buy_thr
             _sell_mask_asym = _best_test_probs < _sell_thr
-            if np.sum(_buy_mask_asym) > 0:
-                _buy_prec_asym = float(np.mean(_actual_test_dir[_buy_mask_asym]) * 100)
+            if np.sum(_buy_mask_asym) >= 30:
+                _buy_prec_asym = f"{float(np.mean(_actual_test_dir[_buy_mask_asym]) * 100):.1f}%"
             else:
-                _buy_prec_asym = 0.0
-            if np.sum(_sell_mask_asym) > 0:
-                _sell_prec_asym = float(np.mean(1 - _actual_test_dir[_sell_mask_asym]) * 100)
+                _buy_prec_asym = "Insufficient signals"
+            if np.sum(_sell_mask_asym) >= 30:
+                _sell_prec_asym = f"{float(np.mean(1 - _actual_test_dir[_sell_mask_asym]) * 100):.1f}%"
             else:
-                _sell_prec_asym = 0.0
+                _sell_prec_asym = "Insufficient signals"
             logger.info(f"\n   v17 ASYMMETRIC THRESHOLDS (Production)")
             logger.info(f"   BUY threshold:  P > {_buy_thr:.2f} \u2192 {int(np.sum(_buy_mask_asym)):,} signals, "
-                       f"precision={_buy_prec_asym:.1f}%")
+                       f"precision={_buy_prec_asym}")
             logger.info(f"   SELL threshold: P < {_sell_thr:.2f} \u2192 {int(np.sum(_sell_mask_asym)):,} signals, "
-                       f"precision={_sell_prec_asym:.1f}%")
+                       f"precision={_sell_prec_asym}")
             
             # ---- v19: Use RAW unscaled returns for walk-forward and backtest ----
             # OLD (buggy): inverse-transform via RobustScaler distorted returns.
@@ -7235,6 +7671,18 @@ class UnifiedStockPredictor:
                 _best_test_probs, test_actuals_np['direction'], _actual_returns,
                 buy_threshold=_bt_buy_thr, sell_threshold=_bt_sell_thr
             )
+            # v55: Add Long-Only Backtest for realistic Indian retail market constraints
+            _backtest_long_only = self._run_simulated_backtest(
+                _best_test_probs, test_actuals_np['direction'], _actual_returns,
+                buy_threshold=_bt_buy_thr, sell_threshold=-1.0  # Impossible to hit
+            )
+            _backtest['long_only_variant'] = _backtest_long_only
+            
+            _paper_backtest = self._run_paper_trade_backtest(
+                _best_test_probs, test_actuals_np['direction'], _actual_returns,
+                buy_threshold=_bt_buy_thr, sell_threshold=_bt_sell_thr
+            )
+            _backtest['paper_trade'] = _paper_backtest
             
             # Save all test artifacts
             joblib.dump({
@@ -7384,7 +7832,7 @@ class UnifiedStockPredictor:
                 logger.info(f"   ✗ Do NOT use for real-money decisions in current state")
             logger.info("=" * 70)
         
-        return {
+        final_summary = {
             'best_metric': best_score,
             'early_stop_metric': CONFIG.get('early_stop_metric', 'direction_accuracy'),
             'final_direction_accuracy': dir_acc,
@@ -7392,6 +7840,21 @@ class UnifiedStockPredictor:
             'final_price_r2': price_r2,
             'all_metrics': self.training_metrics
         }
+        try:
+            version_id = self.model_registry.register_model(
+                model_version=self._model_version,
+                model_path=self._get_paths()[0],
+                metrics=final_summary,
+            )
+            promotion = self.model_registry.promote_if_qualified(version_id, self.win_rate_tracker)
+            final_summary['model_registry'] = {
+                'version_id': version_id,
+                'promotion': promotion,
+            }
+        except Exception as e:
+            logger.warning(f"Model registry update failed: {e}")
+
+        return final_summary
 
     def _compute_financial_aux_loss(self, preds: Dict[str, TorchTensor],
                                     targets: Dict[str, TorchTensor]) -> Optional[TorchTensor]:
@@ -7697,8 +8160,20 @@ class UnifiedStockPredictor:
         #   KL(p||q) = p*log(p/q) + (1-p)*log((1-p)/(1-q))
         # ================================================================
         if preds2 is not None:
-            rdrop_alpha = CONFIG.get('rdrop_alpha', 5.0)
-            if rdrop_alpha > 0:
+            rdrop_alpha = CONFIG.get('rdrop_alpha', 0.5)
+            rdrop_warmup_start = CONFIG.get('rdrop_warmup_start_epoch', 8)
+            rdrop_ramp_epochs = CONFIG.get('rdrop_warmup_ramp_epochs', 4)
+            current_epoch = int(getattr(self, '_current_epoch', 0))
+            
+            if current_epoch < rdrop_warmup_start:
+                effective_rdrop = 0.0
+            elif current_epoch < rdrop_warmup_start + rdrop_ramp_epochs:
+                ramp = (current_epoch - rdrop_warmup_start + 1) / rdrop_ramp_epochs
+                effective_rdrop = rdrop_alpha * ramp
+            else:
+                effective_rdrop = rdrop_alpha
+
+            if effective_rdrop > 0:
                 z1 = preds['direction'].squeeze()
                 z2 = preds2['direction'].squeeze()
                 p1 = torch.sigmoid(z1)
@@ -7710,8 +8185,8 @@ class UnifiedStockPredictor:
                 kl_12 = p1 * torch.log(p1 / p2) + (1 - p1) * torch.log((1 - p1) / (1 - p2))
                 kl_21 = p2 * torch.log(p2 / p1) + (1 - p2) * torch.log((1 - p2) / (1 - p1))
                 rdrop_loss = 0.5 * (kl_12 + kl_21).mean()
-                total = total + rdrop_alpha * rdrop_loss
-                weighted_losses['rdrop'] = rdrop_alpha * rdrop_loss
+                total = total + effective_rdrop * rdrop_loss
+                weighted_losses['rdrop'] = effective_rdrop * rdrop_loss
         
         return total, weighted_losses
     
@@ -7823,9 +8298,9 @@ class UnifiedStockPredictor:
             actual_ret = actual_returns[i]  # log return
             
             # Determine signal
-            if prob > buy_threshold:
+            if prob >= buy_threshold:
                 signal = 'BUY'
-            elif prob < sell_threshold:
+            elif prob <= sell_threshold:
                 signal = 'SELL'
             else:
                 equity_curve.append(equity)
@@ -7970,13 +8445,13 @@ class UnifiedStockPredictor:
         
         # Calmar ratio (annualized return / max drawdown)
         total_return_pct = (equity - initial_capital) / initial_capital * 100 if np.isfinite(equity) else 0.0
-        # Estimate annualized return from total return over the test period
+        # Estimate annualized return correctly compounding over estimated days
         n_periods = len(cal_probs)
-        periods_per_year = trades_per_year
         if n_periods > 0:
-            # Each sample represents ~pred_days of holding
-            total_periods = n_periods  # total observation windows
-            ann_return = ((equity / initial_capital) ** (periods_per_year / max(total_periods, 1)) - 1) * 100
+            # Estimate days (assuming ~50 active tickers per day on average in the filtered universe)
+            days = max(n_periods / 50.0, 1.0)
+            total_return = (equity - initial_capital) / initial_capital
+            ann_return = (((1 + total_return) ** (252 / days)) - 1) * 100
         else:
             ann_return = 0.0
         calmar = ann_return / (max_dd * 100 + 1e-8)
@@ -8055,6 +8530,48 @@ class UnifiedStockPredictor:
         logger.info("=" * 70)
         
         return result
+
+    def _run_paper_trade_backtest(self, cal_probs: np.ndarray, actual_directions: np.ndarray,
+                                  actual_returns: np.ndarray, buy_threshold: float = 0.65,
+                                  sell_threshold: float = 0.35) -> Dict[str, Any]:
+        """Equal-weight, non-compounding reference backtest used to sanity-check CWCB."""
+        del actual_directions  # retained for signature symmetry
+        costs = (CONFIG.get('transaction_cost_pct', 0.15) + CONFIG.get('slippage_pct', 0.05)) / 100.0
+        pnls: List[float] = []
+        signals: List[str] = []
+
+        returns = np.clip(
+            np.nan_to_num(np.asarray(actual_returns, dtype=np.float64), nan=0.0, posinf=0.0, neginf=0.0),
+            -0.30, 0.30
+        )
+        for i, prob in enumerate(np.asarray(cal_probs, dtype=np.float64)):
+            if prob > buy_threshold:
+                gross = float(np.exp(returns[i]) - 1.0)
+                signals.append('BUY')
+            elif prob < sell_threshold:
+                gross = float(-(np.exp(returns[i]) - 1.0))
+                signals.append('SELL')
+            else:
+                continue
+            pnls.append(gross - costs)
+
+        if not pnls:
+            return {'total_trades': 0}
+
+        pnl_arr = np.asarray(pnls, dtype=np.float64)
+        buy_count = int(np.sum(np.asarray(signals) == 'BUY'))
+        sell_count = int(np.sum(np.asarray(signals) == 'SELL'))
+        return {
+            'total_trades': int(len(pnl_arr)),
+            'buys': buy_count,
+            'sells': sell_count,
+            'win_rate': round(float(np.mean(pnl_arr > 0) * 100), 1),
+            'avg_return_pct': round(float(np.mean(pnl_arr) * 100), 3),
+            'median_return_pct': round(float(np.median(pnl_arr) * 100), 3),
+            'total_return_pct': round(float(np.sum(pnl_arr) * 100), 2),
+            'transaction_cost_pct': round(costs * 100, 2),
+            'method': 'equal_weight_non_compounding',
+        }
     
     def _print_metrics_report(self, metrics: Dict):
         """Print comprehensive metrics report"""
@@ -8287,6 +8804,40 @@ class UnifiedStockPredictor:
     
     # ==================== PREDICTION ====================
     
+    def _compute_integrated_gradients(self, tensor: torch.Tensor, graph_context: Optional[torch.Tensor] = None, steps: int = 50) -> Dict[str, float]:
+        """Compute feature attribution using Integrated Gradients."""
+        self.model.eval()
+        baseline = torch.zeros_like(tensor)
+        
+        scaled_inputs = [baseline + (float(i) / steps) * (tensor - baseline) for i in range(1, steps + 1)]
+        scaled_inputs = torch.cat(scaled_inputs, dim=0)
+        scaled_inputs.requires_grad_(True)
+        
+        if graph_context is not None:
+            gc_expanded = graph_context.expand(steps, -1)
+        else:
+            gc_expanded = None
+            
+        self.model.zero_grad()
+        preds = self.model(scaled_inputs, graph_context=gc_expanded)
+        direction_logits = preds['direction'].squeeze()
+        
+        target_score = direction_logits.sum()
+        target_score.backward()
+        
+        avg_grads = scaled_inputs.grad.mean(dim=0, keepdim=True)
+        ig = (tensor - baseline) * avg_grads
+        
+        feature_importance = ig.squeeze(0).sum(dim=0).cpu().numpy()
+        
+        importances = {}
+        if hasattr(self, 'feature_cols') and len(self.feature_cols) == len(feature_importance):
+            for name, imp in zip(self.feature_cols, feature_importance):
+                importances[name] = float(imp)
+                
+        top_features = dict(sorted(importances.items(), key=lambda x: abs(x[1]), reverse=True)[:10])
+        return top_features
+
     def predict(self, ticker: str, capital: float = 100000, risk_pct: float = 2.0) -> Dict:
         """Generate complete prediction with analysis and execution guidance."""
         try:
@@ -8424,7 +8975,12 @@ class UnifiedStockPredictor:
                     _drift_psi = float(np.mean(_psi_per_feature))
                     _top_drift_features = sorted(range(len(_psi_per_feature)),
                                                   key=lambda i: _psi_per_feature[i], reverse=True)[:5]
-                    if _drift_psi > 0.25:
+                    if _drift_psi > 1.0:
+                        _drift_warning = (f"CRITICAL: Severe feature drift detected (mean PSI={_drift_psi:.3f} > 1.0). "
+                                          f"Model is operating completely out of distribution. Trading halted.")
+                        logger.error(f"   v20 DRIFT: {_drift_warning}")
+                        raise ValueError(_drift_warning)
+                    elif _drift_psi > 0.25:
                         _drift_warning = (f"Significant concept drift detected (mean PSI={_drift_psi:.3f} > 0.25). "
                                           f"Top drifted features: {[self.feature_cols[i] for i in _top_drift_features]}. "
                                           f"Prediction reliability may be degraded.")
@@ -8444,6 +9000,9 @@ class UnifiedStockPredictor:
             _T = getattr(self, '_temperature', 1.0)
             _platt_a = getattr(self, '_platt_a', None)
             _platt_b = getattr(self, '_platt_b', None)
+            _iso_reg = getattr(self, '_iso_reg', None)
+            _calibrator_type = getattr(self, '_calibrator_type', 'temperature')
+            
             graph_context_tensor = None
             graph_context_vec = self._resolve_graph_context_vector(ticker, feat_scaled)
             if graph_context_vec is not None:
@@ -8455,7 +9014,10 @@ class UnifiedStockPredictor:
                     for key, val in preds.items():
                         v = val.cpu().numpy()[0, 0]
                         if key == 'direction':
-                            if _platt_a is not None:
+                            if _calibrator_type == 'isotonic' and _iso_reg is not None:
+                                p_raw = float(1 / (1 + np.exp(-np.clip(v, -30, 30))))
+                                v = float(_iso_reg.predict([p_raw])[0])
+                            elif _calibrator_type == 'platt' and _platt_a is not None:
                                 scaled = _platt_a * v + _platt_b
                                 v = float(1 / (1 + np.exp(-np.clip(scaled, -30, 30))))
                             else:
@@ -8468,8 +9030,14 @@ class UnifiedStockPredictor:
             pred_std = {k: float(np.std(v)) for k, v in predictions.items()}
 
             ensemble_result = self._ensemble_predict(
-                tensor, _T, _platt_a, _platt_b, graph_context=graph_context_tensor
+                tensor, _T, _platt_a, _platt_b, _iso_reg, _calibrator_type, graph_context=graph_context_tensor
             )
+            
+            try:
+                feature_attribution = self._compute_integrated_gradients(tensor, graph_context=graph_context_tensor)
+            except Exception as e:
+                logger.warning(f"   Failed to compute feature attribution: {e}")
+                feature_attribution = {}
             if ensemble_result is not None:
                 pred_mean['direction'] = ensemble_result['ensemble_prob']
                 logger.info(f"   v33 Ensemble: {ensemble_result['n_models']} models, "
@@ -8618,12 +9186,61 @@ class UnifiedStockPredictor:
                 sentiment_score=sent_score,
                 min_conf_threshold=min_conf_threshold
             )
+
+            # v51: SELL-Primary Mode (Filter BUY signals, 1xATR logic)
+            if 'BUY' in signal:
+                if direction_prob < 0.70:
+                    signal = 'HOLD'
+                    signal_strength = 'LOW'
+                    signal_meta['decision_reason'] = 'sell_primary_buy_filter'
+                else:
+                    signal_meta['decision_reason'] = 'selective_buy_catalyst'
+                    max_pos_frac = 0.02  # Cap at 2% capital per signal
+                    sl_multiplier = 1.0  # Mandatory stop-loss at 1x ATR
+                    rule_stoploss = current_price - sl_multiplier * atr_20
+                    final_stoploss = rule_stoploss
+                    risk = abs(buy_price - final_stoploss)
+                    reward = abs(final_target - buy_price)
+                    final_rr = reward / risk if risk > 0 else 0
+                    win_loss_ratio = final_rr if final_rr > 0 else 1.5
+                    kelly_fraction = (win_prob * win_loss_ratio - loss_prob) / max(win_loss_ratio, 1e-8)
+                    kelly_fraction = max(kelly_fraction, 0)
+                    fractional_kelly = kelly_fraction * kelly_pct
+                    position_fraction = min(fractional_kelly, max_pos_frac)
+
+            if signal != 'HOLD':
+                _kelly_live = self.dynamic_kelly.get_fraction(signal, fractional_kelly)
+                fractional_kelly = float(_kelly_live.get('fraction', fractional_kelly))
+                position_fraction = min(fractional_kelly, max_pos_frac)
+                position_size = capital * position_fraction
+                max_loss_amount = position_size * (risk / max(buy_price, 1e-8))
+                quantity = int(position_size / max(buy_price, 1)) if buy_price > 0 else 0
+            else:
+                _kelly_live = {
+                    'fraction': 0.0,
+                    'source': 'hold_signal',
+                    'n_live_trades': 0,
+                    'live_win_rate': None,
+                    'full_kelly': None,
+                }
             
             adci = self._compute_adci(
                 direction_prob, confidence, final_rr,
                 price_change_pct * 100, confluence_score,
                 direction_std, sent_score, signal
             )
+
+            _cb_blocked, _cb_reason = self.circuit_breaker.should_block()
+            if signal != 'HOLD' and _cb_blocked:
+                signal = 'HOLD'
+                signal_strength = 'LOW'
+                signal_meta['decision_reason'] = 'live_circuit_breaker'
+                signal_meta['circuit_breaker_reason'] = _cb_reason
+                position_fraction = 0.0
+                position_size = 0.0
+                max_loss_amount = 0.0
+                quantity = 0
+                fractional_kelly = 0.0
 
             _drift_guard_triggered = False
             if (
@@ -8652,12 +9269,12 @@ class UnifiedStockPredictor:
             if 'BUY' in signal:
                 adci_score = adci['score']
                 if adci_score >= 60:
-                    kelly_pct_adjusted = kelly_pct
+                    _adci_scale = 1.0
                 elif adci_score >= 40:
-                    kelly_pct_adjusted = kelly_pct * 0.5
+                    _adci_scale = 0.5
                 else:
-                    kelly_pct_adjusted = kelly_pct * 0.25
-                fractional_kelly = kelly_fraction * kelly_pct_adjusted
+                    _adci_scale = 0.25
+                fractional_kelly = float(_kelly_live.get('fraction', fractional_kelly)) * _adci_scale
                 position_fraction = min(fractional_kelly, max_pos_frac)
                 position_size = capital * position_fraction
                 max_loss_amount = position_size * (risk / max(buy_price, 1e-8))
@@ -8800,9 +9417,13 @@ class UnifiedStockPredictor:
                 'ticker': ticker,
                 'timestamp': datetime.now().isoformat(),
                 'model_version': getattr(self, '_model_version', CONFIG.get('model_version_tag', '34.0.0')),
+                'feature_attribution': feature_attribution,
                 'price_analysis': {
                     'current_price': round(current_price, 2),
-                    'predicted_price_5d': round(predicted_price, 2),
+                    'price_range_5d': [
+                        round(float(_conformal_price.get('lower', current_price - atr_20)), 2),
+                        round(float(_conformal_price.get('upper', current_price + atr_20)), 2)
+                    ],
                     'expected_change': round(price_change, 2),
                     'expected_change_pct': round(price_change_pct * 100, 2),
                     'prediction_uncertainty': round(uncertainty, 4),
@@ -8936,6 +9557,7 @@ class UnifiedStockPredictor:
                         'uncertainty_guard_triggered': signal_meta.get('uncertainty_guard_triggered', False),
                         'reliability_guard_triggered': signal_meta.get('reliability_guard_triggered', False),
                         'drift_guard_triggered': signal_meta.get('drift_guard_triggered', False),
+                        'circuit_breaker_triggered': _cb_blocked,
                     },
                     'buy_gates': signal_meta.get('gates', {}),
                     'holdout_reliability': signal_reliability if signal_reliability else None,
@@ -8947,11 +9569,15 @@ class UnifiedStockPredictor:
                     'position_pct_of_capital': round(position_fraction * 100, 2),
                     'kelly_fraction_full': round(kelly_fraction * 100, 2),
                     'kelly_fraction_used': round(fractional_kelly * 100, 2),
+                    'kelly_source': _kelly_live.get('source'),
+                    'live_win_rate_used_pct': round(float((_kelly_live.get('live_win_rate') or 0.0) * 100), 2) if _kelly_live.get('live_win_rate') is not None else None,
+                    'live_trade_sample_used': int(_kelly_live.get('n_live_trades', 0) or 0),
+                    'kelly_fraction_empirical_full': round(float(_kelly_live.get('full_kelly', 0.0) or 0.0) * 100, 2) if _kelly_live.get('full_kelly') is not None else None,
                     'max_loss_amount': round(max_loss_amount, 2),
                     'risk_per_share': round(risk, 2),
                     'reward_per_share': round(reward, 2),
                     'conformal_size_adjustment': conformal_sizing,
-                    'sizing_method': 'v31 ADCI-Graduated Kelly: BUY scaled by ADCI (5%/2.5%/1.25%) / SELL 20% Kelly + real-time liquidity adjustment',
+                    'sizing_method': 'live-empirical Kelly with ADCI/liquidity/conformal adjustments',
                 },
                 
                 'pattern_analysis': {
@@ -9453,10 +10079,11 @@ class UnifiedStockPredictor:
 
             self._platt_a = checkpoint.get('platt_a', None)
             self._platt_b = checkpoint.get('platt_b', None)
-            if self._platt_a is not None:
-                self._calibrator_type = 'platt'
-            else:
-                self._calibrator_type = 'temperature'
+            self._iso_reg = checkpoint.get('iso_reg', None)
+            self._calibrator_type = checkpoint.get('calibrator_type', 'temperature')
+            if 'calibrator_type' not in checkpoint:
+                if self._platt_a is not None:
+                    self._calibrator_type = 'platt'
 
             self.training_metrics = checkpoint.get('training_metrics', {})
 
@@ -10078,7 +10705,7 @@ class UnifiedStockPredictor:
             return {'score': 0.0, 'active': False}
     
     def _ensemble_predict(self, tensor: TorchTensor, _T: float,
-                         _platt_a, _platt_b,
+                         _platt_a, _platt_b, _iso_reg=None, _calibrator_type='temperature',
                          graph_context: Optional[TorchTensor] = None) -> Optional[Dict[str, Any]]:
         """Blend available EMA/SWA/raw checkpoints into a single direction probability."""
         if not CONFIG.get('use_ensemble_prediction', True):
@@ -10097,7 +10724,10 @@ class UnifiedStockPredictor:
             with torch.no_grad():
                 preds1 = model(tensor, graph_context=graph_context)
                 logit1 = float(preds1['direction'].cpu().numpy()[0, 0])
-                if _platt_a is not None:
+                if _calibrator_type == 'isotonic' and _iso_reg is not None:
+                    p_raw = float(1 / (1 + np.exp(-np.clip(logit1, -30, 30))))
+                    p1 = float(_iso_reg.predict([p_raw])[0])
+                elif _calibrator_type == 'platt' and _platt_a is not None:
                     p1 = float(1 / (1 + np.exp(-np.clip(_platt_a * logit1 + _platt_b, -30, 30))))
                 else:
                     p1 = float(1 / (1 + np.exp(-logit1 / _T)))
@@ -10121,7 +10751,10 @@ class UnifiedStockPredictor:
                     with torch.no_grad():
                         preds2 = model(tensor, graph_context=graph_context)
                         logit2 = float(preds2['direction'].cpu().numpy()[0, 0])
-                        if _platt_a is not None:
+                        if _calibrator_type == 'isotonic' and _iso_reg is not None:
+                            p_raw = float(1 / (1 + np.exp(-np.clip(logit2, -30, 30))))
+                            p2 = float(_iso_reg.predict([p_raw])[0])
+                        elif _calibrator_type == 'platt' and _platt_a is not None:
                             p2 = float(1 / (1 + np.exp(-np.clip(_platt_a * logit2 + _platt_b, -30, 30))))
                         else:
                             p2 = float(1 / (1 + np.exp(-logit2 / _T)))
@@ -10147,7 +10780,10 @@ class UnifiedStockPredictor:
                     with torch.no_grad():
                         preds3 = model(tensor, graph_context=graph_context)
                         logit3 = float(preds3['direction'].cpu().numpy()[0, 0])
-                        if _platt_a is not None:
+                        if _calibrator_type == 'isotonic' and _iso_reg is not None:
+                            p_raw = float(1 / (1 + np.exp(-np.clip(logit3, -30, 30))))
+                            p3 = float(_iso_reg.predict([p_raw])[0])
+                        elif _calibrator_type == 'platt' and _platt_a is not None:
                             p3 = float(1 / (1 + np.exp(-np.clip(_platt_a * logit3 + _platt_b, -30, 30))))
                         else:
                             p3 = float(1 / (1 + np.exp(-logit3 / _T)))

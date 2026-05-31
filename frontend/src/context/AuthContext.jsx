@@ -20,15 +20,28 @@ export function AuthProvider({ children }) {
         if (token) {
             fetchCurrentUser()
                 .then(userData => {
-                    if (mountedRef.current) {
+                    if (!mountedRef.current) return;
+
+                    if (userData && userData.id) {
                         setUser(userData);
                         setIsAuthenticated(true);
+                        return;
                     }
+
+                    // No active session (204/null or missing profile)
+                    localStorage.removeItem('auth_token');
+                    localStorage.removeItem('auth_user');
+                    setUser(null);
+                    setIsAuthenticated(false);
                 })
                 .catch(() => {
                     // Token invalid/expired
                     localStorage.removeItem('auth_token');
                     localStorage.removeItem('auth_user');
+                    if (mountedRef.current) {
+                        setUser(null);
+                        setIsAuthenticated(false);
+                    }
                 })
                 .finally(() => {
                     if (mountedRef.current) setLoading(false);

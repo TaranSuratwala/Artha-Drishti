@@ -30,9 +30,26 @@ from datetime import datetime, date, time as dt_time, timedelta
 from typing import Optional, Callable, Dict, Any, List
 from collections import deque
 
+import pytz
+
 # Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# ═══════════════════════════════════════════════════════════════
+# TIMEZONE HELPERS — always use IST regardless of server location
+# ═══════════════════════════════════════════════════════════════
+_IST = pytz.timezone('Asia/Kolkata')
+
+
+def get_ist_now() -> datetime:
+    """Always return current time in IST, regardless of server location."""
+    return datetime.now(_IST)
+
+
+def get_ist_today() -> date:
+    """Always return current date in IST."""
+    return get_ist_now().date()
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -123,7 +140,7 @@ NSE_HOLIDAYS = {
 def is_market_day(d: date = None) -> bool:
     """Check if a given date is a market trading day (weekday + not a holiday)."""
     if d is None:
-        d = date.today()
+        d = get_ist_today()
     # Weekend check (Saturday=5, Sunday=6)
     if d.weekday() >= 5:
         return False
@@ -136,7 +153,7 @@ def is_market_day(d: date = None) -> bool:
 def next_market_day(d: date = None) -> date:
     """Get the next market trading day after given date."""
     if d is None:
-        d = date.today()
+        d = get_ist_today()
     d += timedelta(days=1)
     while not is_market_day(d):
         d += timedelta(days=1)
@@ -238,7 +255,7 @@ class DataScheduler:
     
     def _run_if_market_day(self):
         """Only run the pipeline if today is a market trading day."""
-        today = date.today()
+        today = get_ist_today()
         if not is_market_day(today):
             reason = "NSE holiday" if today.weekday() < 5 else "Weekend"
             logger.info(f"⏭️  Skipping scheduled run — {reason} ({today.strftime('%A, %d %B %Y')})")
@@ -267,9 +284,10 @@ class DataScheduler:
             return
         
         self._job_running = True
+        now_ist = get_ist_now()
         run_record = {
-            "started_at": datetime.now().isoformat(),
-            "date": date.today().isoformat(),
+            "started_at": now_ist.isoformat(),
+            "date": get_ist_today().isoformat(),
             "steps": {},
             "status": "running",
             "retry": retry_count,
@@ -283,12 +301,12 @@ class DataScheduler:
         try:
             logger.info("=" * 80)
             logger.info("🚀 AUTOMATED MARKET-DAY DATA PIPELINE")
-            logger.info(f"   Date: {date.today().strftime('%A, %d %B %Y')}")
-            logger.info(f"   Time: {datetime.now().strftime('%H:%M:%S')} IST")
+            logger.info(f"   Date: {get_ist_today().strftime('%A, %d %B %Y')}")
+            logger.info(f"   Time: {now_ist.strftime('%H:%M:%S')} IST")
             if retry_count > 0:
                 logger.info(f"   Retry: {retry_count}/{self.MAX_RETRIES}")
             logger.info("=" * 80)
-            start_time = datetime.now()
+            start_time = get_ist_now()
             
             failed_steps = []
             symbols_fetched = 0
@@ -300,7 +318,7 @@ class DataScheduler:
             
             if self.data_pipeline:
                 logger.info("\n📊 STEP 1/5: Fetching latest stock data...")
-                step_start = datetime.now()
+                step_start = get_ist_now()
                 try:
                     if hasattr(self.data_pipeline, 'get_all_nse_symbols'):
                         symbols = self.data_pipeline.get_all_nse_symbols()
@@ -348,7 +366,7 @@ class DataScheduler:
                                     if batch_idx + self.BATCH_SIZE < total:
                                         time.sleep(self.BATCH_DELAY_SEC)
                             
-                            step_duration = (datetime.now() - step_start).total_seconds()
+                            step_duration = (get_ist_now() - step_start).total_seconds()
                             run_record["steps"]["fetch"] = {
                                 "status": "success",
                                 "symbols": symbols_fetched,
@@ -373,10 +391,10 @@ class DataScheduler:
             self.current_progress = 0.25
             
             logger.info("\n🔍 STEP 2/5: Validating and pre-processing fetched data...")
-            step_start = datetime.now()
+            step_start = get_ist_now()
             try:
                 validation_results = self._validate_data()
-                step_duration = (datetime.now() - step_start).total_seconds()
+                step_duration = (get_ist_now() - step_start).total_seconds()
                 run_record["steps"]["validate"] = {
                     "status": "success",
                     **validation_results,
@@ -396,10 +414,10 @@ class DataScheduler:
             
             if self.feature_engineer_func:
                 logger.info("\n🔧 STEP 3/5: Running feature engineering pipeline...")
-                step_start = datetime.now()
+                step_start = get_ist_now()
                 try:
                     self.feature_engineer_func()
-                    step_duration = (datetime.now() - step_start).total_seconds()
+                    step_duration = (get_ist_now() - step_start).total_seconds()
                     run_record["steps"]["feature_engineering"] = {
                         "status": "success",
                         "duration_sec": round(step_duration, 1),
@@ -419,10 +437,10 @@ class DataScheduler:
             
             if self.sentiment_func:
                 logger.info("\n📰 STEP 4/5: Pre-caching sentiment analysis...")
-                step_start = datetime.now()
+                step_start = get_ist_now()
                 try:
                     self.sentiment_func()
-                    step_duration = (datetime.now() - step_start).total_seconds()
+                    step_duration = (get_ist_now() - step_start).total_seconds()
                     run_record["steps"]["sentiment"] = {
                         "status": "success",
                         "duration_sec": round(step_duration, 1),
@@ -441,10 +459,10 @@ class DataScheduler:
             
             if self.model_train_func and self.auto_train_enabled:
                 logger.info("\n🤖 STEP 5/5: Auto-training ML prediction model...")
-                step_start = datetime.now()
+                step_start = get_ist_now()
                 try:
                     self.model_train_func()
-                    step_duration = (datetime.now() - step_start).total_seconds()
+                    step_duration = (get_ist_now() - step_start).total_seconds()
                     run_record["steps"]["model_training"] = {
                         "status": "success",
                         "duration_sec": round(step_duration, 1),
@@ -465,11 +483,11 @@ class DataScheduler:
                 run_record["steps"]["model_training"] = {"status": "skipped", "reason": "not configured"}
             
             # ── Pipeline summary ──
-            total_duration = (datetime.now() - start_time).total_seconds()
+            total_duration = (get_ist_now() - start_time).total_seconds()
             self.current_progress = 1.0
             self.current_step = "Complete"
             
-            nxt = next_market_day(date.today())
+            nxt = next_market_day(get_ist_today())
             
             if failed_steps:
                 overall_status = f"Partial success ({len(failed_steps)} step(s) failed: {', '.join(failed_steps)})"
@@ -478,12 +496,12 @@ class DataScheduler:
                 overall_status = f"Success (took {total_duration:.1f}s)"
                 run_record["status"] = "success"
             
-            run_record["completed_at"] = datetime.now().isoformat()
+            run_record["completed_at"] = get_ist_now().isoformat()
             run_record["duration_sec"] = round(total_duration, 1)
             run_record["symbols_fetched"] = symbols_fetched
             
             with self._lock:
-                self.last_run = datetime.now()
+                self.last_run = get_ist_now()
                 self.last_status = overall_status
                 self.last_error = None if not failed_steps else f"Failed steps: {', '.join(failed_steps)}"
                 self.run_count += 1
@@ -502,7 +520,7 @@ class DataScheduler:
             
             run_record["status"] = "failed"
             run_record["error"] = error_msg
-            run_record["completed_at"] = datetime.now().isoformat()
+            run_record["completed_at"] = get_ist_now().isoformat()
             
             with self._lock:
                 self.last_status = "Failed"
@@ -549,7 +567,7 @@ class DataScheduler:
                 results["missing_count"] = 1
                 return results
             
-            today = date.today()
+            today = get_ist_today()
             for row in latest_data:
                 # Check data freshness
                 row_date = None
@@ -609,7 +627,7 @@ class DataScheduler:
             if APSCHEDULER_AVAILABLE and self.scheduler:
                 self.scheduler.start()
                 self.is_running = True
-                nxt = next_market_day(date.today()) if not is_market_day() else date.today()
+                nxt = next_market_day(get_ist_today()) if not is_market_day() else get_ist_today()
                 self.last_status = f"Waiting — next run: {nxt.strftime('%a %d %b')} at {self.schedule_hour}:{self.schedule_minute:02d} IST"
                 logger.info(f"Scheduler started successfully!")
                 logger.info(f"   Today is {'a market day ✓' if is_market_day() else 'NOT a market day (holiday/weekend)'}")
@@ -662,7 +680,7 @@ class DataScheduler:
                 logger.warning("⚠️  Startup catch-up: Could not determine latest DB date, skipping")
                 return
             
-            today = date.today()
+            today = get_ist_today()
             
             # Calculate how many market days are missing
             missing_days = []
@@ -673,10 +691,10 @@ class DataScheduler:
                 check_date += timedelta(days=1)
             
             # If today is a market day and it's before schedule time, don't count today as missing
-            now = datetime.now()
+            now_ist = get_ist_now()
             if (missing_days and 
                 missing_days[-1] == today and 
-                now.hour < self.schedule_hour):
+                now_ist.hour < self.schedule_hour):
                 missing_days = missing_days[:-1]
             
             if missing_days:
@@ -712,7 +730,7 @@ class DataScheduler:
             
             last_run_date = None
             while self.is_running:
-                now = datetime.now()
+                now = get_ist_now()
                 today = now.date()
                 
                 # Fire if we're within the target minute window (handles ±30s drift)
@@ -789,7 +807,7 @@ class DataScheduler:
         return {
             "status": "triggered",
             "message": "Data pipeline started in background",
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": get_ist_now().isoformat(),
             "is_market_day": is_market_day(),
         }
     
@@ -930,47 +948,92 @@ def init_scheduler(app, data_pipeline=None):
     Initialize scheduler with Flask app context.
     Call this from application.py to start automatic updates.
     
+    Guards against Flask's Werkzeug debug-mode double-boot: in debug mode
+    Werkzeug spawns a watcher process AND a worker process.  Without this
+    check both would start a scheduler, causing duplicate pipeline runs,
+    DB lock contention, and double Yahoo Finance API traffic.
+    
     Args:
         app: Flask application instance
         data_pipeline: NSEDataPipeline instance
     """
     scheduler = get_scheduler(data_pipeline=data_pipeline)
     
-    # Auto-start if enabled
-    auto_start = os.getenv('SCHEDULER_AUTO_START', 'true').lower() == 'true'
-    if auto_start:
-        scheduler.start()
-        logger.info("Scheduler auto-started with application")
+    # CRITICAL: Prevent double-execution in Flask debug mode.
+    # Only the actual worker process (WERKZEUG_RUN_MAIN=true) should start
+    # the scheduler; the watcher process must NOT.
+    if not app.debug or os.environ.get('WERKZEUG_RUN_MAIN') == 'true':
+        auto_start = os.getenv('SCHEDULER_AUTO_START', 'true').lower() == 'true'
+        if auto_start:
+            scheduler.start()
+            logger.info("Scheduler auto-started with application")
+    else:
+        logger.info("⏸️  Scheduler skipped in Flask reloader parent process")
     
     return scheduler
 
 
 if __name__ == "__main__":
-    # Test the scheduler
-    print("=" * 60)
-    print("DataScheduler Test Suite")
-    print("=" * 60)
-    
-    scheduler = DataScheduler()
-    
-    # Test market day logic
-    print(f"\nToday ({date.today()}): {'Market day ✓' if is_market_day() else 'Not a market day ✗'}")
-    print(f"Next market day: {next_market_day()}")
-    
-    # Test status
-    status = scheduler.get_status()
-    print(f"\nScheduler Status:")
-    for k, v in status.items():
-        if k != 'recent_history':
-            print(f"  {k}: {v}")
-    
-    # Test manual trigger
-    print(f"\nTriggering manual run...")
-    result = scheduler.trigger_now()
-    print(f"Result: {result}")
-    
-    # Wait for completion
+    import argparse
     import time
-    time.sleep(5)
-    print(f"\nStatus after trigger: {scheduler.get_status()['last_status']}")
-    print(f"History: {len(scheduler.job_history)} records")
+
+    parser = argparse.ArgumentParser(description="Market-day data pipeline scheduler")
+    parser.add_argument(
+        "--service",
+        action="store_true",
+        help="Run scheduler as a long-lived service (default if no flags)",
+    )
+    parser.add_argument(
+        "--run-once",
+        action="store_true",
+        help="Run the pipeline once immediately and exit",
+    )
+    parser.add_argument(
+        "--test",
+        action="store_true",
+        help="Run scheduler diagnostics and exit",
+    )
+    args = parser.parse_args()
+
+    def _build_pipeline():
+        from IntegratedPostGreSQL import NSEDataPipeline, DB_URL
+        db_url = os.getenv("DATABASE_URL", DB_URL)
+        return NSEDataPipeline(db_url)
+
+    def _run_diagnostics():
+        print("=" * 60)
+        print("DataScheduler Diagnostics")
+        print("=" * 60)
+
+        scheduler = DataScheduler()
+        print(f"\nToday ({get_ist_today()}): {'Market day ✓' if is_market_day() else 'Not a market day ✗'}")
+        print(f"Next market day: {next_market_day()}")
+
+        status = scheduler.get_status()
+        print(f"\nScheduler Status:")
+        for k, v in status.items():
+            if k != 'recent_history':
+                print(f"  {k}: {v}")
+
+    if args.test:
+        _run_diagnostics()
+    else:
+        run_service = args.service or not args.run_once
+        pipeline = _build_pipeline()
+        scheduler = DataScheduler(data_pipeline=pipeline)
+
+        if args.run_once:
+            logger.info("Manual run requested (run-once mode)")
+            scheduler.trigger_now()
+            while scheduler._job_running:
+                time.sleep(2)
+            logger.info("Run-once complete")
+        elif run_service:
+            logger.info("Starting scheduler service")
+            scheduler.start()
+            try:
+                while True:
+                    time.sleep(30)
+            except KeyboardInterrupt:
+                logger.info("Stopping scheduler service")
+                scheduler.stop()
