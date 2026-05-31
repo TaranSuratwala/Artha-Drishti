@@ -1,6 +1,5 @@
 # Artha Drishti
 
-Artha Drishti is a stock market intelligence platform that brings screening, prediction, and backtesting into a single workflow. It pairs a modern React dashboard with a Flask API to deliver data, models, and strategy evaluation in one place.
 <p align="center">
   <img src="https://capsule-render.vercel.app/api?type=rect&color=0:0f172a,100:0b1b2b&height=120&section=header&text=Artha-Drishti&fontSize=36&fontColor=F8FAFC&fontAlignY=60" alt="Artha-Drishti banner" />
 </p>
@@ -18,16 +17,14 @@ Artha Drishti is a stock market intelligence platform that brings screening, pre
   <img src="https://img.shields.io/badge/license-MIT-green" alt="License" />
 </p>
 
-# Artha-Drishti
-
-Artha-Drishti is a stock market intelligence platform that brings screening, prediction, and backtesting into a single workflow. It pairs a React dashboard with a Flask API to deliver data, models, and strategy evaluation in one place.
+Artha Drishti is a stock market intelligence platform that brings screening, prediction, and backtesting into a single workflow. It pairs a modern React dashboard with a Flask API to deliver data, models, and strategy evaluation in one place.
 
 ## Product Highlights
 
 - Multi-strategy stock screening covering momentum, Piotroski, swing, breakout, value, and custom logic
 - LSTM + attention predictions with batch and per-ticker endpoints
 - Historical backtesting with performance metrics and strategy comparison
-- Scheduler-driven data pipeline with PostgreSQL and TimescaleDB, with optional Redis caching
+- Scheduler-driven data pipeline with PostgreSQL and TimescaleDB, optional Redis caching
 - Portfolio watchlists, charts, and summary dashboards for faster review
 
 ## System Overview
@@ -122,6 +119,10 @@ Project sem-6/
 
 - Backend details: [backend/README.md](backend/README.md)
 - Frontend details: [frontend/README.md](frontend/README.md)
+
+## Site Theme
+
+The GitHub Pages theme lives in `docs/`. Enable Pages to serve from the `/docs` folder.
 
 ## License
 

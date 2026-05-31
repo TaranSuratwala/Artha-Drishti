@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang='en'>
+<head>
+  <meta charset='UTF-8' />
+  <meta name='viewport' content='width=device-width, initial-scale=1' />
+  <title>Artha-Drishti - Stock Intelligence Platform</title>
+  <link rel='preconnect' href='https://fonts.googleapis.com' />
+  <link rel='preconnect' href='https://fonts.gstatic.com' crossorigin />
+  <link href='https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600&family=Space+Grotesk:wght@400;500;600;700&display=swap' rel='stylesheet' />
+  <link rel='stylesheet' href='styles.css' />
+</head>
+<body>
+  <div class='bg'>
+    <span class='orb orb-one'></span>
+    <span class='orb orb-two'></span>
+    <span class='grid'></span>
+  </div>
+
+  <header class='topbar'>
+    <div class='logo'>Artha-Drishti</div>
+    <nav class='nav'>
+      <a href='#features'>Features</a>
+      <a href='#architecture'>Architecture</a>
+      <a href='#quickstart'>Quickstart</a>
+      <a href='#docs'>Docs</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class='hero'>
+      <div class='hero-copy'>
+        <p class='eyebrow'>GenAI stock intelligence</p>
+        <h1>See market signals with ML clarity.</h1>
+        <p class='lead'>
+          Screen, backtest, and predict with a single platform that unifies data ingestion,
+          strategy engines, and production dashboards.
+        </p>
+        <div class='cta-row'>
+          <a class='btn primary' href='#quickstart'>Start locally</a>
+          <a class='btn ghost' href='https://github.com/TaranSuratwala/Artha-Drishti'>View repo</a>
+        </div>
+        <div class='stat-row'>
+          <div class='stat'>
+            <span class='stat-value'>6+</span>
+            <span class='stat-label'>screening strategies</span>
+          </div>
+          <div class='stat'>
+            <span class='stat-value'>50+</span>
+            <span class='stat-label'>indicators</span>
+          </div>
+          <div class='stat'>
+            <span class='stat-value'>ML</span>
+            <span class='stat-label'>price targets</span>
+          </div>
+        </div>
+      </div>
+      <div class='hero-panel'>
+        <div class='panel-card'>
+          <p class='panel-label'>Data pipeline</p>
+          <p class='panel-value'>NSE + TimescaleDB</p>
+          <p class='panel-note'>Scheduler-ready ingestion and caching.</p>
+        </div>
+        <div class='panel-card highlight'>
+          <p class='panel-label'>Signals engine</p>
+          <p class='panel-value'>Momentum to value</p>
+          <p class='panel-note'>Compare strategies with backtests.</p>
+        </div>
+        <div class='panel-card'>
+          <p class='panel-label'>Prediction API</p>
+          <p class='panel-value'>Batch price targets</p>
+          <p class='panel-note'>Fast endpoints with confidence levels.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id='features' class='section'>
+      <div class='section-head'>
+        <h2>Built for research and production</h2>
+        <p>Everything needed to go from raw data to portfolio-ready insight.</p>
+      </div>
+      <div class='card-grid'>
+        <article class='card'>
+          <h3>Multi-strategy screening</h3>
+          <p>Run momentum, piotroski, swing, breakout, value, or custom rules in one flow.</p>
+        </article>
+        <article class='card'>
+          <h3>ML forecasting</h3>
+          <p>LSTM and attention-based models generate five-day targets and technical levels.</p>
+        </article>
+        <article class='card'>
+          <h3>Backtesting suite</h3>
+          <p>Compare strategies with equity curves and unified performance metrics.</p>
+        </article>
+        <article class='card'>
+          <h3>Analytics dashboard</h3>
+          <p>React UI with search, watchlists, and interactive charts.</p>
+        </article>
+      </div>
+    </section>
+
+    <section id='architecture' class='section'>
+      <div class='section-head'>
+        <h2>Architecture</h2>
+        <p>Modular services keep the pipeline clear and extensible.</p>
+      </div>
+      <div class='diagram'>
+        <div class='diagram-node'>Data sources</div>
+        <div class='diagram-arrow'></div>
+        <div class='diagram-node'>Pipeline + storage</div>
+        <div class='diagram-arrow'></div>
+        <div class='diagram-node'>ML and strategies</div>
+        <div class='diagram-arrow'></div>
+        <div class='diagram-node'>API + dashboard</div>
+      </div>
+    </section>
+
+    <section id='quickstart' class='section split'>
+      <div>
+        <h2>Quickstart</h2>
+        <p>Bring up the backend, then launch the frontend.</p>
+      </div>
+      <div class='code-stack'>
+        <div class='code-card'>
+          <div class='code-title'>Backend</div>
+          <pre><code>cd backend
+python -m venv venv
+venv/Scripts/activate
+pip install -r requirements.txt
+copy .env.example .env
+python application.py</code></pre>
+        </div>
+        <div class='code-card'>
+          <div class='code-title'>Frontend</div>
+          <pre><code>cd frontend
+npm install
+npm run dev</code></pre>
+        </div>
+      </div>
+    </section>
+
+    <section id='docs' class='section'>
+      <div class='section-head'>
+        <h2>Docs</h2>
+        <p>Deep dives into the backend API and frontend design system.</p>
+      </div>
+      <div class='link-grid'>
+        <a class='link-card' href='https://github.com/TaranSuratwala/Artha-Drishti/blob/main/backend/README.md'>
+          Backend README
+        </a>
+        <a class='link-card' href='https://github.com/TaranSuratwala/Artha-Drishti/blob/main/frontend/README.md'>
+          Frontend README
+        </a>
+        <a class='link-card' href='https://github.com/TaranSuratwala/Artha-Drishti'>
+          GitHub repository
+        </a>
+      </div>
+    </section>
+  </main>
+
+  <footer class='footer'>
+    <p>Artha-Drishti is built for signal clarity and rapid experimentation.</p>
+  </footer>
+</body>
+</html>
