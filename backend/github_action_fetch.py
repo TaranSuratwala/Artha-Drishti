@@ -2,6 +2,7 @@ import os
 import sys
 import logging
 from datetime import datetime
+from sqlalchemy.exc import OperationalError
 
 # Ensure we can import from backend
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -15,6 +16,23 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+def is_transient_database_error(error: Exception) -> bool:
+    """Detect transient database connectivity issues that should not fail the scheduler workflow."""
+    if isinstance(error, OperationalError):
+        return True
+
+    message = str(error).lower()
+    transient_markers = (
+        "could not translate host name",
+        "name or service not known",
+        "temporary failure in name resolution",
+        "could not connect to server",
+        "connection refused",
+        "connection timed out",
+        "timeout expired",
+    )
+    return any(marker in message for marker in transient_markers)
 
 def run_pipeline():
     """Run the daily data fetch pipeline if it's a market day."""
@@ -45,6 +63,10 @@ def run_pipeline():
         
         logger.info("Daily data update completed successfully.")
     except Exception as e:
+        if is_transient_database_error(e):
+            logger.warning(f"Transient database connectivity issue. Skipping run: {e}")
+            return
+
         logger.error(f"Error during data update: {e}")
         sys.exit(1)
 
