@@ -1,128 +1,180 @@
 # Artha Drishti
 
-<p align="center">
-  <img src="https://capsule-render.vercel.app/api?type=rect&color=0:0f172a,100:0b1b2b&height=120&section=header&text=Artha-Drishti&fontSize=36&fontColor=F8FAFC&fontAlignY=60" alt="Artha-Drishti banner" />
-</p>
+Artha Drishti is an end-to-end stock market intelligence platform that unifies data ingestion, quantitative screening, machine-learning forecasting, and strategy backtesting in one product.
 
-<p align="center">
-  <img src="https://img.shields.io/github/last-commit/TaranSuratwala/Artha-Drishti?style=flat-square" alt="Last commit" />
-  <img src="https://img.shields.io/github/languages/top/TaranSuratwala/Artha-Drishti?style=flat-square" alt="Top language" />
-  <img src="https://img.shields.io/github/repo-size/TaranSuratwala/Artha-Drishti?style=flat-square" alt="Repo size" />
-</p>
+## Table of Contents
+- [Overview](#overview)
+- [Core Capabilities](#core-capabilities)
+- [Technology Stack](#technology-stack)
+- [Application Architecture](#application-architecture)
+- [Getting Started](#getting-started)
+- [Configuration](#configuration)
+- [Key API Endpoints](#key-api-endpoints)
+- [Repository Structure](#repository-structure)
+- [Documentation](#documentation)
+- [License](#license)
 
-<p align="center">
-  <img src="https://img.shields.io/badge/python-3.9%2B-blue" alt="Python" />
-  <img src="https://img.shields.io/badge/react-18-61dafb" alt="React" />
-  <img src="https://img.shields.io/badge/vite-4.x-646cff" alt="Vite" />
-  <img src="https://img.shields.io/badge/license-MIT-green" alt="License" />
-</p>
+## Overview
 
-Artha Drishti is a stock market intelligence platform that brings screening, prediction, and backtesting into a single workflow. It pairs a modern React dashboard with a Flask API to deliver data, models, and strategy evaluation in one place.
+The platform combines a React dashboard with a Flask API and a modular analytics engine. It is designed for practitioners who need a single workflow for market discovery, prediction, and historical validation.
 
-## Product Highlights
+## Core Capabilities
 
-- Multi-strategy stock screening covering momentum, Piotroski, swing, breakout, value, and custom logic
-- LSTM + attention predictions with batch and per-ticker endpoints
-- Historical backtesting with performance metrics and strategy comparison
-- Scheduler-driven data pipeline with PostgreSQL and TimescaleDB, optional Redis caching
-- Portfolio watchlists, charts, and summary dashboards for faster review
+- Multi-strategy stock screening (Momentum, Piotroski, Swing, Breakout, Value, and Custom rules)
+- ML-driven forecasting using sequence models with attention
+- Strategy backtesting with standardized performance outputs
+- Automated data pipeline backed by PostgreSQL/TimescaleDB
+- Watchlist and dashboard views for operational decision support
 
-## System Overview
+## Technology Stack
 
-- Frontend: React 18 + Vite single-page application
-- Backend: Flask API, scheduler, ML pipeline, and screener engine
-- Data: PostgreSQL 14+ with TimescaleDB extension; optional Redis cache
-- ML: PyTorch models with pretrained artifacts
+- **Frontend:** React 18, Vite
+- **Backend:** Flask, APScheduler, Python analytics services
+- **Data Layer:** PostgreSQL 14+, TimescaleDB, optional Redis cache
+- **ML Layer:** PyTorch-based forecasting models
 
-## Run Locally
+## Application Architecture
 
-1. Start the backend API:
-   ```bash
-   cd backend
-   python -m venv venv
-   venv\Scripts\activate
-   pip install -r requirements.txt
-   copy .env.example .env
-   python application.py
-   ```
-2. Start the frontend:
-   ```bash
-   cd frontend
-   npm install
-   npm run dev
-   ```
-3. Open the app at http://localhost:5173
+```mermaid
+flowchart TB
+    subgraph External[External Sources]
+        NSE[NSE market data]
+        APIs[Optional providers\nNewsAPI / Finnhub / AlphaVantage]
+    end
 
-Optional check: `GET http://localhost:5000/api/health`
+    subgraph Ingestion[Data Ingestion & Processing]
+        PIPE[IntegratedPostGreSQL.py\nBatch ingest, transform, store]
+        FE[FeatureEngineering.py\nTechnical indicators]
+        SCH[Scheduler\nDaily/catch-up execution]
+    end
+
+    subgraph Storage[Persistence]
+        PG[(PostgreSQL + TimescaleDB)]
+        RD[(Redis cache - optional)]
+        ART[(Model artifacts)]
+    end
+
+    subgraph Intelligence[Analytics & Modeling]
+        SCR[StockScreener.py\nRule-based screening]
+        MLP[MLPredictor.py\nForecast generation]
+        BT[Backtesting.py\nHistorical simulation]
+    end
+
+    subgraph API[Service Layer]
+        FLASK[application.py\nFlask REST API]
+        AUTH[Auth, watchlist, health, strategy endpoints]
+    end
+
+    subgraph UX[Client Layer]
+        UI[React + Vite dashboard]
+        SVC[Frontend service adapters]
+    end
+
+    NSE --> PIPE
+    APIs --> PIPE
+    PIPE --> FE
+    FE --> PG
+    SCH --> PIPE
+    PG --> SCR
+    PG --> MLP
+    PG --> BT
+    MLP --> ART
+    SCR --> FLASK
+    MLP --> FLASK
+    BT --> FLASK
+    PG --> FLASK
+    RD --> FLASK
+    FLASK --> AUTH
+    AUTH --> SVC
+    SVC --> UI
+```
+
+## Getting Started
+
+### 1) Start the backend
+
+```bash
+cd backend
+python -m venv venv
+# Windows
+venv\Scripts\activate
+# Linux/macOS
+source venv/bin/activate
+pip install -r requirements.txt
+copy .env.example .env
+python application.py
+```
+
+### 2) Start the frontend
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Open: `http://localhost:5173`
+
+Optional health check: `GET http://localhost:5000/api/health`
 
 ## Configuration
 
-### Backend (.env)
+### Backend (`backend/.env`)
 
-Copy [backend/.env.example](backend/.env.example) to `backend/.env` and update values as needed.
-
-Key variables:
+Create from `backend/.env.example` and configure key values:
 
 - `DATABASE_URL`
-- `CORS_ORIGINS`
 - `APP_HOST`, `APP_PORT`, `APP_ENV`, `APP_DEBUG`, `APP_USE_RELOADER`, `APP_THREADED`
 - `SECRET_KEY`, `JWT_SECRET_KEY`
+- `CORS_ORIGINS`
 - `NEWSAPI_KEY`, `FINNHUB_KEY`, `ALPHAVANTAGE_KEY` (optional)
 - `SCHEDULER_ENABLED`, `SCHEDULER_HOUR`, `SCHEDULER_MINUTE`, `SCHEDULER_AUTO_START`
 - `SCHEDULER_AUTO_CATCHUP`, `SCHEDULER_AUTO_TRAIN`, `SCHEDULER_IN_WEB_WORKER`
 
-### Frontend (.env.local)
+### Frontend (`frontend/.env.local`)
 
-Copy [frontend/.env.example](frontend/.env.example) to `frontend/.env.local` and set:
+Create from `frontend/.env.example`:
 
-- `VITE_GOOGLE_CLIENT_ID`
-- `VITE_API_BASE_URL` (leave empty for same-origin proxy)
+- `VITE_API_BASE_URL` (optional; leave empty for same-origin proxy)
+- `VITE_GOOGLE_CLIENT_ID` (optional; enables Google OAuth)
 
-## API Highlights
+## Key API Endpoints
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/health` | GET | Health check |
-| `/api/screen/momentum` | POST | Momentum screening |
-| `/api/screen/piotroski` | POST | Piotroski screening |
-| `/api/predict/<ticker>` | POST | Price prediction |
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/api/health` | GET | Service health |
+| `/api/stocks` | GET | Latest stock snapshot |
+| `/api/history/<ticker>` | GET | Historical series for a ticker |
+| `/api/screen/momentum` | POST | Momentum screen |
+| `/api/screen/piotroski` | POST | Piotroski F-score screen |
+| `/api/predict/<ticker>` | POST | Generate model forecast |
 | `/api/train/<ticker>` | POST | Train/update model |
-| `/api/backtest/<strategy>` | POST | Strategy backtest |
+| `/api/backtest/<strategy>` | POST | Run strategy backtest |
 
-## Project Structure
+## Repository Structure
 
-```
-Project sem-6/
-├── backend/                    # Flask API
-│   ├── application.py          # Main server
-│   ├── IntegratedPostGreSQL.py # NSE data pipeline
-│   ├── MLPredictor.py          # AI prediction engine
-│   ├── StockScreener.py        # Multi-strategy screener
-│   ├── FeatureEngineering.py   # Indicators
-│   ├── Backtesting.py          # Strategy backtesting
-│   ├── config.py               # Configuration
-│   ├── requirements.txt        # Python dependencies
-│   └── README.md               # Backend docs
-│
-└── frontend/                   # React + Vite SPA
-    ├── src/
-    │   ├── components/         # UI and chart components
-    │   ├── services/           # API service layer
-    │   ├── styles/             # Design system
-    │   └── App.jsx             # Main application
-    ├── package.json            # Frontend dependencies
-    ├── vite.config.js          # Vite configuration
-    └── README.md               # Frontend docs
+```text
+Artha-Drishti/
+├── backend/                    # Flask API, data pipeline, ML, screening, backtesting
+│   ├── application.py
+│   ├── IntegratedPostGreSQL.py
+│   ├── MLPredictor.py
+│   ├── StockScreener.py
+│   ├── FeatureEngineering.py
+│   ├── Backtesting.py
+│   └── README.md
+├── frontend/                   # React dashboard
+│   ├── src/
+│   ├── package.json
+│   └── README.md
+└── docs/                       # GitHub Pages site assets
 ```
 
 ## Documentation
 
-- Backend details: [backend/README.md](backend/README.md)
-- Frontend details: [frontend/README.md](frontend/README.md)
-
-## Site Theme
-
-The GitHub Pages theme lives in `docs/`. Enable Pages to serve from the `/docs` folder.
+- Backend guide: [`backend/README.md`](backend/README.md)
+- Frontend guide: [`frontend/README.md`](frontend/README.md)
+- Project pages assets: [`docs/`](docs/)
 
 ## License
 
