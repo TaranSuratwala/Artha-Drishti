@@ -20,7 +20,7 @@ numpy==1.26.2
 yfinance==0.2.33
 
 # Technical Analysis
-pandas_ta==0.3.14b
+fin-primitives>=3.2
 ta==0.11.0
 
 # Machine Learning

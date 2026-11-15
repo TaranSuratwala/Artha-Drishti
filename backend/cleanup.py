@@ -26,7 +26,7 @@ def clean_fe_file(filepath):
     start_index = -1
     for i, line in enumerate(lines):
         if line.strip() == 'import pandas as pd':
-            if i + 1 < len(lines) and lines[i+1].strip() == 'import pandas_ta as ta':
+            if i + 1 < len(lines) and lines[i+1].strip() == 'import TechnicalIndicators as ti':
                  start_index = i
                  break # Take the first match of the clean block
 

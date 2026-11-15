@@ -1578,7 +1578,7 @@
 
 
 import pandas as pd
-import pandas_ta as ta
+import TechnicalIndicators as ti
 import yfinance as yf
 import numpy as np
 from typing import Dict, List, Optional, Set
@@ -1664,34 +1664,34 @@ class StockFeatureEngineer:
             # Moving Averages
             for period in [5, 10, 20, 50, 100, 200]:
                 try:
-                    self.df[f'sma_{period}'] = self.df.ta.sma(length=period)
-                    self.df[f'ema_{period}'] = self.df.ta.ema(length=period)
+                    self.df[f'sma_{period}'] = ti.sma(self.df['close'], period)
+                    self.df[f'ema_{period}'] = ti.ema(self.df['close'], period)
                 except Exception as e:
                     logger.warning(f"Failed to calculate MA_{period} for {self.ticker}: {e}")
             
             # MACD
             try:
-                macd = self.df.ta.macd(fast=12, slow=26, signal=9)
+                macd = ti.macd(self.df['close'], fast=12, slow=26, signal=9)
                 if macd is not None: self.df = pd.concat([self.df, macd], axis=1)
             except Exception as e:
                 logger.warning(f"MACD calculation failed for {self.ticker}: {e}")
             
             # ADX
             try:
-                adx = self.df.ta.adx(length=14)
+                adx = ti.adx(self.df['high'], self.df['low'], self.df['close'], length=14)
                 if adx is not None: self.df = pd.concat([self.df, adx], axis=1)
             except Exception as e:
                 logger.warning(f"ADX calculation failed for {self.ticker}: {e}")
             
             # RSI
             try:
-                self.df['rsi_14'] = self.df.ta.rsi(length=14)
+                self.df['rsi_14'] = ti.rsi(self.df['close'], length=14)
             except Exception as e:
                 logger.warning(f"RSI calculation failed for {self.ticker}: {e}")
             
             # Bollinger Bands
             try:
-                bbands = self.df.ta.bbands(length=20, std=2)
+                bbands = ti.bbands(self.df['close'], length=20, std=2)
                 if bbands is not None: 
                     self.df = pd.concat([self.df, bbands], axis=1)
                     if 'BBU_20_2.0' in self.df.columns and 'BBL_20_2.0' in self.df.columns:
@@ -1701,18 +1701,18 @@ class StockFeatureEngineer:
 
             # ATR
             try:
-                self.df['atr_14'] = self.df.ta.atr(length=14)
+                self.df['atr_14'] = ti.atr(self.df['high'], self.df['low'], self.df['close'], length=14)
             except Exception as e:
                 logger.warning(f"ATR calculation failed for {self.ticker}: {e}")
 
             # Volume Indicators
             try:
-                self.df['obv'] = self.df.ta.obv()
+                self.df['obv'] = ti.obv(self.df['close'], self.df['volume'])
             except Exception as e:
                 logger.warning(f"OBV calculation failed for {self.ticker}: {e}")
             
             try:
-                self.df['vwap'] = self.df.ta.vwap()
+                self.df['vwap'] = ti.vwap(self.df['high'], self.df['low'], self.df['close'], self.df['volume'])
             except Exception as e:
                 logger.warning(f"VWAP calculation failed for {self.ticker}: {e}")
             
@@ -1725,7 +1725,7 @@ class StockFeatureEngineer:
         try:
             # Aroon
             try:
-                aroon = self.df.ta.aroon(length=25)
+                aroon = ti.aroon(self.df['high'], self.df['low'], length=25)
                 if aroon is not None:
                     self.df = pd.concat([self.df, aroon], axis=1)
                     if 'AROONU_25' in self.df.columns and 'AROOND_25' in self.df.columns:
@@ -1735,7 +1735,7 @@ class StockFeatureEngineer:
 
             # Stochastic
             try:
-                stoch = self.df.ta.stoch(k=14, d=3, smooth_k=3)
+                stoch = ti.stoch(self.df['high'], self.df['low'], self.df['close'], k=14, d=3, smooth_k=3)
                 if stoch is not None:
                     self.df = pd.concat([self.df, stoch], axis=1)
             except Exception as e:
@@ -1743,13 +1743,13 @@ class StockFeatureEngineer:
 
             # CCI
             try:
-                self.df['cci_20'] = self.df.ta.cci(length=20)
+                self.df['cci_20'] = ti.cci(self.df['high'], self.df['low'], self.df['close'], length=20)
             except Exception as e:
                 logger.warning(f"CCI calculation failed for {self.ticker}: {e}")
             
             # ROC
             try:
-                self.df['roc_10'] = self.df.ta.roc(length=10)
+                self.df['roc_10'] = ti.roc(self.df['close'], length=10)
             except Exception as e:
                 logger.warning(f"ROC calculation failed for {self.ticker}: {e}")
 
@@ -1760,7 +1760,7 @@ class StockFeatureEngineer:
 
     def add_price_patterns(self) -> pd.DataFrame:
         try:
-            self.df['cdl_doji'] = self.df.ta.cdl_doji(append=False) / 100.0
+            self.df['cdl_doji'] = ti.cdl_doji(self.df['open'], self.df['high'], self.df['low'], self.df['close'])
         except Exception: pass
 
         O, H, L, C = self.df['open'], self.df['high'], self.df['low'], self.df['close']
