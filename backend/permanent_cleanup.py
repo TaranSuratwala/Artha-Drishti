@@ -88,7 +88,7 @@ if __name__ == "__main__":
     cleanup_file(
         'FeatureEngineering.py',
         primary_marker='import pandas as pd',
-        secondary_marker='import pandas_ta as ta'
+        secondary_marker='import TechnicalIndicators as ti'
     )
     
     print()
